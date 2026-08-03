@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HydroClim Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1b2a;color:#e8f4f0;min-height:100vh;}
+.app{max-width:420px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;}
+.header{background:linear-gradient(135deg,#0d3b2e,#0d1b2a);padding:16px 20px;border-bottom:1px solid #1a4a3a;position:sticky;top:0;z-index:50;}
+.header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.app-label{font-size:10px;letter-spacing:.15em;color:#4ecba0;text-transform:uppercase;font-weight:700;}
+.header h1{font-size:20px;font-weight:800;color:#fff;}
+.header p{font-size:11px;color:#8ab5a5;margin-top:2px;}
+.back-btn{background:none;border:none;color:#4ecba0;font-size:13px;cursor:pointer;padding:4px 8px;border-radius:6px;}
+.hamburger{display:flex;flex-direction:column;gap:4px;background:none;border:none;cursor:pointer;padding:6px;}
+.hamburger span{display:block;width:20px;height:2px;background:#4ecba0;border-radius:2px;}
+.content{flex:1;padding:16px;background:#0f2030;overflow-y:auto;}
+.card{background:#1a2f42;border:1px solid #234055;border-radius:14px;padding:16px;margin-bottom:12px;}
+.card-title{font-size:13px;font-weight:700;color:#e8f4f0;margin-bottom:8px;}
+.card-sub{font-size:11px;color:#6a9080;margin-bottom:10px;}
+.input-group{margin-bottom:12px;}
+.input-group label{font-size:12px;color:#8ab5a5;display:block;margin-bottom:4px;}
+.input-group input{width:100%;background:#0d2235;border:1px solid #234055;border-radius:8px;padding:10px 12px;color:#e8f4f0;font-size:14px;outline:none;}
+.input-group input:focus{border-color:#4ecba0;}
+.btn-primary{width:100%;padding:13px;background:linear-gradient(135deg,#0f6e56,#0a9e7a);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+.btn-secondary{width:100%;padding:11px;background:rgba(78,203,160,.1);color:#4ecba0;border:1px solid rgba(78,203,160,.3);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;}
+.btn-danger{width:100%;padding:11px;background:rgba(220,80,80,.1);color:#e06060;border:1px solid rgba(220,80,80,.3);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;}
+.alert{border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;}
+.alert-error{background:rgba(220,80,80,.1);border:1px solid rgba(220,80,80,.3);color:#e06060;}
+.alert-success{background:rgba(78,203,160,.1);border:1px solid rgba(78,203,160,.3);color:#4ecba0;}
+.alert-info{background:rgba(74,159,224,.1);border:1px solid rgba(74,159,224,.3);color:#4a9fe0;}
+.menu-item{cursor:pointer;margin-bottom:10px;transition:transform .15s;}
+.menu-item:hover .card{border-color:#4ecba0;}
+.menu-row{display:flex;justify-content:space-between;align-items:center;}
+.menu-title{font-size:14px;font-weight:700;color:#e8f4f0;}
+.menu-desc{font-size:11px;color:#6a9080;margin-top:3px;}
+.badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+.bg{background:rgba(78,203,160,.15);color:#4ecba0;border:1px solid rgba(78,203,160,.25);}
+.bo{background:rgba(224,160,96,.15);color:#e0a060;border:1px solid rgba(224,160,96,.25);}
+.bb{background:rgba(74,159,224,.15);color:#4a9fe0;border:1px solid rgba(74,159,224,.25);}
+.bp{background:rgba(160,130,220,.15);color:#a082dc;border:1px solid rgba(160,130,220,.25);}
+.br{background:rgba(220,80,80,.15);color:#e06060;border:1px solid rgba(220,80,80,.25);}
+.stat-card{background:linear-gradient(135deg,#0f6e56,#0a4a3a);border:none;}
+.stat-card .slbl{font-size:11px;color:#9fe1cb;}
+.stat-card .sval{font-size:24px;font-weight:800;color:#fff;margin:4px 0;}
+.stat-card .sdtl{font-size:11px;color:#7dcfb0;}
+.tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.tab{flex:1;min-width:60px;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;text-align:center;border:1px solid #234055;background:#0d2235;color:#6a9080;transition:all .2s;}
+.tab.active{border-color:#4ecba0;background:rgba(78,203,160,.12);color:#4ecba0;}
+.section-label{font-size:10px;color:#5a7a6a;text-transform:uppercase;letter-spacing:.1em;margin:14px 0 8px;font-weight:700;}
+.auth-tabs{display:flex;background:#0d2235;border-radius:10px;padding:3px;margin-bottom:16px;}
+.auth-tab{flex:1;padding:8px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-align:center;color:#6a9080;transition:all .2s;}
+.auth-tab.active{background:#1a4a3a;color:#4ecba0;}
+.role-sel{display:flex;gap:8px;margin-top:4px;}
+.role-opt{flex:1;padding:10px 8px;border:1px solid #234055;background:#0d2235;border-radius:8px;text-align:center;cursor:pointer;transition:all .2s;}
+.role-opt .ri{font-size:20px;display:block;margin-bottom:2px;}
+.role-opt .rl{font-size:11px;font-weight:700;color:#8ab5a5;}
+.role-opt.sel{border-color:#4ecba0;background:rgba(78,203,160,.1);}
+.role-opt.sel .rl{color:#4ecba0;}
+.avatar{width:72px;height:72px;background:linear-gradient(135deg,#0f6e56,#4ecba0);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px;}
+.drawer-overlay{position:fixed;inset:0;background:rgba(3,8,14,.88);z-index:200;opacity:0;pointer-events:none;transition:opacity .25s;}
+.drawer-overlay.open{opacity:1;pointer-events:auto;}
+.drawer{position:fixed;top:0;left:0;bottom:0;width:78%;max-width:300px;background:#0d1b2a;border-right:1px solid #1a4a3a;z-index:201;transform:translateX(-100%);transition:transform .25s;display:flex;flex-direction:column;padding:20px 0;}
+.drawer.open{transform:translateX(0);}
+.dh{padding:0 20px 16px;border-bottom:1px solid #1a4a3a;margin-bottom:8px;}
+.dh .dt{font-size:16px;font-weight:700;color:#fff;}
+.dh .ds{font-size:11px;color:#6a9080;margin-top:2px;}
+.di{display:flex;align-items:center;gap:12px;padding:13px 20px;cursor:pointer;color:#8ab5a5;font-size:13px;font-weight:600;transition:background .15s;}
+.di:hover{background:rgba(78,203,160,.08);}
+.di.active{color:#4ecba0;background:rgba(78,203,160,.1);border-right:3px solid #4ecba0;}
+.di .ico{font-size:16px;width:22px;text-align:center;}
+.pt{height:6px;background:#0d2235;border-radius:4px;overflow:hidden;margin-top:8px;}
+.pf{height:100%;background:linear-gradient(90deg,#0f6e56,#4ecba0);border-radius:4px;transition:width .4s;}
+.ib{background:rgba(78,203,160,.06);border-left:3px solid #4ecba0;border-radius:0 8px 8px 0;padding:10px 12px;font-size:12px;line-height:1.6;color:#c0d8d0;margin-top:8px;}
+.dt-table{width:100%;border-collapse:collapse;font-size:11px;}
+.dt-table th{color:#6a9080;padding:5px 6px;text-align:left;border-bottom:1px solid #234055;white-space:nowrap;}
+.dt-table td{padding:5px 6px;border-bottom:1px solid #1a2f42;color:#c0d8d0;white-space:nowrap;}
+.dt-table td.hl{color:#4ecba0;font-weight:700;}
+.dt-table td.hlo{color:#e0a060;font-weight:700;}
+.uz{border:2px dashed #234055;border-radius:10px;padding:24px;text-align:center;cursor:pointer;position:relative;transition:all .2s;background:#0d1b2a;}
+.uz:hover{border-color:#4ecba0;}
+.uz.loaded{border:2px solid #4ecba0;background:rgba(78,203,160,.06);}
+.uz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.uz .ui{font-size:32px;margin-bottom:8px;}
+.uz .ul{font-size:12px;color:#8ab5a5;font-weight:600;}
+.uz .uh{font-size:10px;color:#4a6a5a;margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+const SUPA_URL="https://mfaoeahoxexkleilapaw.supabase.co";
+const SUPA_KEY="sb_publishable_Hw_W5Y0o7qFBfY0GwwRYVA_QP7VWBpJ";
+const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+
+let S={
+  screen:"accueil",user:null,menuOpen:false,
+  authTab:"login",authRole:"scientifique",
+  importData:{precip:null,tmax:null,tmin:null,debit:null},
+  importFiles:{precip:null,tmax:null,tmin:null,debit:null},
+  importTab:"precip",
+  etccdiResults:null,etccdiStatus:"",
+  debitResults:null,
+  baseDirecte:null,baseDirecteFile:null,
+  spearmanResults:null,
+  spearmanQetiage:"Q5",spearmanQcrue:"Q95",
+};
+function setState(o){S={...S,...o};render();}
+
+// ---- UTILITAIRES ----
+function parseNum(v){
+  if(v===null||v===undefined||v==="")return null;
+  const n=parseFloat(String(v).replace(",","."));
+  return isNaN(n)?null:n;
+}
+function getYear(ds){
+  if(!ds)return null;
+  const s=String(ds).trim();
+  if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s))return parseInt(s.split("/")[2]);
+  if(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)){
+    const p=s.split("/"),yr=parseInt(p[2]);
+    return yr<100?(yr<=30?2000+yr:1900+yr):yr;
+  }
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return parseInt(s.substring(0,4));
+  const n=parseFloat(s);
+  if(!isNaN(n)&&n>10000&&n<100000)
+    return new Date(new Date(1899,11,30).getTime()+Math.floor(n)*86400000).getFullYear();
+  const d=new Date(s);return isNaN(d.getTime())?null:d.getFullYear();
+}
+function getDOY(ds){
+  const s=String(ds).trim();
+  let day,month,year;
+  if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)){const p=s.split("/");day=+p[0];month=+p[1];year=+p[2];}
+  else if(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)){
+    const p=s.split("/");month=+p[0];day=+p[1];const yr=+p[2];
+    year=yr<100?(yr<=30?2000+yr:1900+yr):yr;
+  }
+  else{const d=new Date(s);if(isNaN(d.getTime()))return 1;return Math.floor((d-new Date(d.getFullYear(),0,0))/86400000);}
+  const d=new Date(year,month-1,day);
+  return Math.floor((d-new Date(year,0,0))/86400000);
+}
+function pct(arr,p){
+  if(!arr.length)return null;
+  const s=[...arr].sort((a,b)=>a-b);
+  const idx=(p/100)*(s.length-1);
+  const lo=Math.floor(idx),hi=Math.ceil(idx);
+  return lo===hi?s[lo]:s[lo]+(s[hi]-s[lo])*(idx-lo);
+}
+function maxRun(arr,cond){let mx=0,cur=0;for(const v of arr){if(cond(v)){cur++;if(cur>mx)mx=cur;}else cur=0;}return mx;}
+function sumRuns(arr,cond,ml){let t=0,i=0;while(i<arr.length){if(cond(arr[i])){let j=i;while(j<arr.length&&cond(arr[j]))j++;if((j-i)>=ml)t+=(j-i);i=j;}else i++;}return t;}
+
+// ---- AUTH ----
+async function doLogin(email,pass){
+  const{data,error}=await supa.auth.signInWithPassword({email,password:pass});
+  if(error)throw new Error(trad(error.message));
+  let{data:prof}=await supa.from("profiles").select("*").eq("id",data.user.id).single();
+  if(!prof){
+    const meta=data.user.user_metadata||{};
+    const{data:np}=await supa.from("profiles").insert({
+      id:data.user.id,nom:meta.nom||email.split("@")[0],
+      identifiant:meta.identifiant||email.split("@")[0],
+      institution:meta.institution||"",role:meta.role||"scientifique"
+    }).select().single();
+    prof=np;
+  }
+  return prof;
+}
+async function doRegister(nom,email,ident,pass,inst,role){
+  const{error}=await supa.auth.signUp({email,password:pass,
+    options:{data:{nom,identifiant:ident,institution:inst,role}}});
+  if(error)throw new Error(trad(error.message));
+}
+async function doLogout(){await supa.auth.signOut();setState({user:null,screen:"accueil"});}
+function trad(m){
+  if(!m)return"Erreur.";
+  if(m.includes("already registered"))return"Email deja utilise.";
+  if(m.includes("Email not confirmed"))return"Verifie ta boite mail.";
+  if(m.includes("Invalid login credentials"))return"Email ou mot de passe incorrect.";
+  if(m.includes("Password should be"))return"Mot de passe trop court.";
+  return m;
+}
+
+// ---- CALCUL PRECIP ----
+function calcPrecip(data){
+  if(!data||!data.length)return null;
+  const cols=Object.keys(data[0]);
+  const dc=cols.find(c=>c.toLowerCase().includes("date"))||cols[0];
+  const sts=cols.filter(c=>c!==dc);
+  const yrs=[...new Set(data.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
+  const res={};
+  sts.forEach(st=>{
+    const PRCPTOT=[],RX1day=[],Rx5day=[],R10=[],R20=[],SDII=[],CDD=[],CWD=[];
+    yrs.forEach(an=>{
+      const rows=data.filter(r=>getYear(r[dc])===an);
+      const P=rows.map(r=>{const v=parseNum(r[st]);return(v===null||isNaN(v))?0:v;});
+      const wet=P.map(p=>p>=1.0);
+      const wv=P.filter((_,i)=>wet[i]);
+      PRCPTOT.push(+wv.reduce((a,b)=>a+b,0).toFixed(2));
+      RX1day.push(+Math.max(...P).toFixed(2));
+      let mx5=0;
+      for(let i=0;i<=P.length-5;i++){const s5=P[i]+P[i+1]+P[i+2]+P[i+3]+P[i+4];if(s5>mx5)mx5=s5;}
+      Rx5day.push(+mx5.toFixed(2));
+      R10.push(P.filter(p=>p>=10).length);
+      R20.push(P.filter(p=>p>=20).length);
+      SDII.push(wv.length>0?+(wv.reduce((a,b)=>a+b,0)/wv.length).toFixed(3):0);
+      CDD.push(maxRun(P,p=>p<1.0));
+      CWD.push(maxRun(P,p=>p>=1.0));
+    });
+    res[st]={annees:yrs,PRCPTOT,RX1day,Rx5day,R10,R20,SDII,CDD,CWD};
+  });
+  return res;
+}
+
+// ---- CALCUL TEMP ----
+function calcTemp(dataTX,dataTN){
+  if(!dataTX||!dataTX.length||!dataTN||!dataTN.length)return null;
+  const cols=Object.keys(dataTX[0]);
+  const dc=cols.find(c=>c.toLowerCase().includes("date"))||cols[0];
+  const sts=cols.filter(c=>c!==dc);
+  const colsTN=Object.keys(dataTN[0]);
+  const dcTN=colsTN.find(c=>c.toLowerCase().includes("date"))||colsTN[0];
+  const yrs=[...new Set(dataTX.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
+  const ref0=yrs[0],ref1=ref0+29;
+  const res={};
+  sts.forEach(st=>{
+    const stTN=colsTN.find(c=>c!==dcTN&&c.toLowerCase().replace(/[^a-z]/g,"")==st.toLowerCase().replace(/[^a-z]/g,""))||colsTN.find(c=>c!==dcTN);
+    const TX=dataTX.map(r=>parseNum(r[st]));
+    const TN=dataTN.map(r=>parseNum(r[stTN]));
+    const nr=Math.min(TX.length,TN.length);
+    const doys=dataTX.slice(0,nr).map(r=>getDOY(r[dc]));
+    const yall=dataTX.slice(0,nr).map(r=>getYear(r[dc]));
+    const inRef=yall.map(y=>y!==null&&y>=ref0&&y<=ref1);
+    const TXr=TX.filter((_,i)=>inRef[i]&&TX[i]!==null);
+    const TNr=TN.filter((_,i)=>inRef[i]&&TN[i]!==null);
+    const dr=doys.filter((_,i)=>inRef[i]);
+    const p10TX=new Array(367).fill(null),p90TX=new Array(367).fill(null);
+    const p10TN=new Array(367).fill(null),p90TN=new Array(367).fill(null);
+    for(let j=1;j<=366;j++){
+      const win=[];
+      for(let d=j-5;d<=j+5;d++)win.push(((d-1)%366+366)%366+1);
+      const mTX=dr.map(d=>win.includes(d));
+      const txW=TXr.filter((_,i)=>mTX[i]);
+      const tnW=TNr.filter((_,i)=>mTX[i]);
+      if(txW.length>=5){p10TX[j]=pct(txW,10);p90TX[j]=pct(txW,90);}
+      if(tnW.length>=5){p10TN[j]=pct(tnW,10);p90TN[j]=pct(tnW,90);}
+    }
+    const t10x=doys.map(d=>p10TX[Math.min(d,366)]);
+    const t90x=doys.map(d=>p90TX[Math.min(d,366)]);
+    const t10n=doys.map(d=>p10TN[Math.min(d,366)]);
+    const t90n=doys.map(d=>p90TN[Math.min(d,366)]);
+    const SU25=[],TR20=[],TN10p=[],TX10p=[],TN90p=[],TX90p=[],WSDI=[],CSDI=[],DTR=[];
+    yrs.forEach(an=>{
+      const idx=[];for(let i=0;i<nr;i++)idx.push(yall[i]===an);
+      const n=idx.filter(Boolean).length;
+      if(n===0){SU25.push(0);TR20.push(0);TN10p.push(0);TX10p.push(0);TN90p.push(0);TX90p.push(0);WSDI.push(0);CSDI.push(0);DTR.push(null);return;}
+      const tx=TX.filter((_,i)=>idx[i]);
+      const tn=TN.filter((_,i)=>idx[i]);
+      const _t10x=t10x.filter((_,i)=>idx[i]);
+      const _t90x=t90x.filter((_,i)=>idx[i]);
+      const _t10n=t10n.filter((_,i)=>idx[i]);
+      const _t90n=t90n.filter((_,i)=>idx[i]);
+      SU25.push(tx.filter(v=>v!==null&&v>25).length);
+      TR20.push(tn.filter(v=>v!==null&&v>20).length);
+      TN10p.push(+(100*tn.filter((v,i)=>v!==null&&_t10n[i]!==null&&v<_t10n[i]).length/n).toFixed(3));
+      TX10p.push(+(100*tx.filter((v,i)=>v!==null&&_t10x[i]!==null&&v<_t10x[i]).length/n).toFixed(3));
+      TN90p.push(+(100*tn.filter((v,i)=>v!==null&&_t90n[i]!==null&&v>_t90n[i]).length/n).toFixed(3));
+      TX90p.push(+(100*tx.filter((v,i)=>v!==null&&_t90x[i]!==null&&v>_t90x[i]).length/n).toFixed(3));
+      const dv=tx.map((v,i)=>v!==null&&tn[i]!==null?v-tn[i]:null).filter(v=>v!==null);
+      DTR.push(dv.length>0?+(dv.reduce((a,b)=>a+b,0)/dv.length).toFixed(3):null);
+      WSDI.push(sumRuns(tx.map((v,i)=>v!==null&&_t90x[i]!==null&&v>_t90x[i]),v=>v,6));
+      CSDI.push(sumRuns(tn.map((v,i)=>v!==null&&_t10n[i]!==null&&v<_t10n[i]),v=>v,6));
+    });
+    res[st]={annees:yrs,SU25,TR20,TN10p,TX10p,TN90p,TX90p,WSDI,CSDI,DTR};
+  });
+  return res;
+}
+
+// ---- CALCUL DEBITS ----
+function calcDebits(data){
+  if(!data||!data.length)return null;
+  const cols=Object.keys(data[0]);
+  const dc=cols.find(c=>c.toLowerCase().includes("date"))||cols[0];
+  const qc=cols.find(c=>c!==dc)||cols[1];
+  const yrs=[...new Set(data.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
+  const Q5=[],Q10=[],Q50=[],Q90=[],Q95=[],Qmoy=[],Qmin=[],Qmax=[];
+  yrs.forEach(an=>{
+    const vals=data.filter(r=>getYear(r[dc])===an).map(r=>parseNum(r[qc])).filter(v=>v!==null&&!isNaN(v)).sort((a,b)=>a-b);
+    if(!vals.length){Q5.push(null);Q10.push(null);Q50.push(null);Q90.push(null);Q95.push(null);Qmoy.push(null);Qmin.push(null);Qmax.push(null);return;}
+    Q5.push(+pct(vals,5).toFixed(3));Q10.push(+pct(vals,10).toFixed(3));Q50.push(+pct(vals,50).toFixed(3));
+    Q90.push(+pct(vals,90).toFixed(3));Q95.push(+pct(vals,95).toFixed(3));
+    Qmoy.push(+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(3));
+    Qmin.push(+Math.min(...vals).toFixed(3));Qmax.push(+Math.max(...vals).toFixed(3));
+  });
+  return{annees:yrs,Q5,Q10,Q50,Q90,Q95,Qmoy,Qmin,Qmax};
+}
+
+// ---- SPEARMAN ----
+function rngs(arr){
+  const v=arr.map((x,i)=>({x,i})).filter(a=>a.x!==null&&!isNaN(a.x));
+  v.sort((a,b)=>a.x-b.x);
+  const r=new Array(arr.length).fill(null);
+  let i=0;
+  while(i<v.length){
+    let j=i;while(j+1<v.length&&v[j+1].x===v[i].x)j++;
+    const rm=(i+j)/2+1;for(let k=i;k<=j;k++)r[v[k].i]=rm;i=j+1;
+  }
+  return r;
+}
+function spearman(x,y){
+  const pairs=x.map((v,i)=>({x:v,y:y[i]})).filter(p=>p.x!==null&&p.y!==null&&!isNaN(p.x)&&!isNaN(p.y));
+  const n=pairs.length;
+  if(n<3)return{rho:null,pval:null,n};
+  const rx=rngs(pairs.map(p=>p.x)),ry=rngs(pairs.map(p=>p.y));
+  const mx=rx.reduce((a,b)=>a+b,0)/n,my=ry.reduce((a,b)=>a+b,0)/n;
+  let num=0,dx=0,dy=0;
+  for(let i=0;i<n;i++){num+=(rx[i]-mx)*(ry[i]-my);dx+=(rx[i]-mx)**2;dy+=(ry[i]-my)**2;}
+  const rho=(dx&&dy)?num/Math.sqrt(dx*dy):0;
+  const t=rho*Math.sqrt(n-2)/Math.sqrt(Math.max(1e-10,1-rho*rho));
+  return{rho:+rho.toFixed(4),pval:+tpv(Math.abs(t),n-2).toFixed(4),n};
+}
+function tpv(t,df){const x=df/(df+t*t);return Math.min(1,Math.max(0,ibeta(x,df/2,0.5)));}
+function ibeta(x,a,b){
+  if(x<=0)return 0;if(x>=1)return 1;
+  const lb=lgm(a)+lgm(b)-lgm(a+b);
+  return Math.exp(Math.log(x)*a+Math.log(1-x)*b-lb)/a*bcf(x,a,b);
+}
+function bcf(x,a,b){
+  let am=1,bm=1,az=1,qab=a+b,qap=a+1,qam=a-1,bz=1-qab*x/qap;
+  for(let m=1;m<=100;m++){
+    const em=m,tem=2*em;
+    let d=em*(b-m)*x/((qam+tem)*(a+tem));
+    let ap=az+d*am,bp=bz+d*bm;
+    d=-(a+em)*(qab+em)*x/((a+tem)*(qap+tem));
+    let app=ap+d*az,bpp=bp+d*bz,old=az;
+    am=ap/bpp;bm=bp/bpp;az=app/bpp;bz=1;
+    if(Math.abs(az-old)<3e-7*Math.abs(az))return az;
+  }
+  return az;
+}
+function lgm(x){
+  const c=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+  let y=x,tmp=x+5.5,ser=1.000000000190015;
+  tmp-=(x+0.5)*Math.log(tmp);
+  for(let j=0;j<6;j++){y++;ser+=c[j]/y;}
+  return -tmp+Math.log(2.5066282746310005*ser/x);
+}
+function calcMat(base,debits){
+  if(!base||base.length<3)return null;
+  const inds=["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"];
+  const mat={};
+  inds.forEach(idx=>{
+    mat[idx]={};
+    const x=base.map(r=>parseNum(r[idx]));
+    debits.forEach(d=>{mat[idx][d]=spearman(x,base.map(r=>parseNum(r[d])));});
+  });
+  return{mat,debits,indices:inds.filter(i=>base[0].hasOwnProperty(i))};
+}
+
+// ---- EXPORT ----
+function xls(sheets,fname){
+  if(typeof XLSX==="undefined"){alert("XLSX non disponible.");return;}
+  const wb=XLSX.utils.book_new();
+  sheets.forEach(s=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s.data),s.name));
+  XLSX.writeFile(wb,fname);
+}
+function lire(file,cb){
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:"binary",cellDates:false});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{raw:false});
+      if(!json||!json.length){alert("Fichier vide.");return;}
+      cb(json);
+    }catch(err){alert("Erreur: "+err.message);}
+  };
+  r.readAsBinaryString(file);
+}
+function heatColor(rho,pval){
+  if(rho===null)return"#1a2f42";
+  const sig=pval!==null&&pval<0.05,a=Math.abs(rho);
+  if(rho>0)return sig?`rgb(0,${100+Math.round(a*180)},${140+Math.round(a*60)})`: `rgba(78,203,160,${0.1+a*0.4})`;
+  return sig?`rgb(${150+Math.round(a*100)},40,40)`:`rgba(224,96,96,${0.1+a*0.4})`;
+}
+
+// ---- HELPER HTML ----
+function hdr(title,sub,back){
+  return`<div class="header"><div class="header-top"><div style="display:flex;align-items:center;gap:10px;">${S.user?'<button class="hamburger" onclick="setState({menuOpen:true})"><span></span><span></span><span></span></button>':''}<div class="app-label">HydroClim</div></div><div>${back?'<button class="back-btn" onclick="back()">← retour</button>':''}</div></div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</div>`;
+}
+function back(){setState({screen:S.user?"dashboard":"accueil"});}
+function drw(){
+  if(!S.user)return"";
+  const items=[
+    {id:"dashboard",ic:"🏠",lb:"Tableau de bord"},
+    {id:"import",ic:"📂",lb:"Import donnees"},
+    {id:"etccdi",ic:"🧮",lb:"Calcul ETCCDI"},
+    {id:"debits",ic:"💧",lb:"Percentiles debits"},
+    {id:"spearman",ic:"📊",lb:"Analyse Spearman"},
+    {id:"os2",ic:"〜",lb:"Variabilite CWT"},
+    {id:"os3",ic:"⟳",lb:"Relations de phase"},
+    {id:"profil",ic:"👤",lb:"Mon profil"},
+  ];
+  return`<div class="drawer-overlay ${S.menuOpen?"open":""}" onclick="setState({menuOpen:false})"></div><div class="drawer ${S.menuOpen?"open":""}"><div class="dh"><div class="dt">HydroClim Analyzer</div><div class="ds">${S.user.nom} · ${S.user.role}</div></div>${items.map(it=>`<div class="di ${S.screen===it.id?"active":""}" onclick="setState({screen:'${it.id}',menuOpen:false})"><span class="ico">${it.ic}</span>${it.lb}</div>`).join("")}</div>`;
+}
+
+// ---- ÉCRANS ----
+function sAccueil(){
+  return`${hdr("HydroClim Analyzer","Bassin versant de l'Oueme - Benin")}<div class="content"><div style="text-align:center;padding:24px 0;"><div style="font-size:60px;margin-bottom:12px;">💧</div><div style="font-size:22px;font-weight:800;color:#fff;">HydroClim</div><div style="font-size:13px;color:#6a9080;margin-top:6px;line-height:1.7;">Analyse des extremes climatiques<br>et des debits · Oueme a Bonou<br><span style="color:#4ecba0;">Benin · 1991–2020</span></div></div><div class="card" style="background:linear-gradient(135deg,#0f3b2e,#0d2235);border:none;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;"><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">25</div><div style="color:#6a9080;font-size:11px;">Stations</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">16</div><div style="color:#6a9080;font-size:11px;">Indices</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">30</div><div style="color:#6a9080;font-size:11px;">Annees</div></div></div></div><button class="btn-primary" onclick="setState({screen:'auth'})">Connexion / Inscription</button><div style="text-align:center;font-size:10px;color:#3a5a4a;margin-top:6px;">ENSGMM/UNSTIM Abomey · 2026</div></div>`;
+}
+
+function sAuth(){
+  const login=`<div class="card"><div id="la"></div><div class="input-group"><label>Email</label><input id="le" type="email" placeholder="nom@domaine.bj"/></div><div class="input-group"><label>Mot de passe</label><input id="lp" type="password" placeholder="••••••"/></div><button class="btn-primary" id="lbtn" onclick="subLogin()">Se connecter</button></div><div style="text-align:center;font-size:12px;color:#6a9080;margin-top:8px;cursor:pointer;" onclick="setState({authTab:'register'})">Pas de compte ? <span style="color:#4ecba0;">Creer un compte</span></div>`;
+  const reg=`<div class="card"><div id="ra"></div><div class="input-group"><label>Profil</label><div class="role-sel"><div class="role-opt ${S.authRole==="scientifique"?"sel":""}" onclick="setState({authRole:'scientifique'})"><span class="ri">🔬</span><span class="rl">Scientifique</span></div><div class="role-opt ${S.authRole==="decideur"?"sel":""}" onclick="setState({authRole:'decideur'})"><span class="ri">💼</span><span class="rl">Decideur</span></div></div></div><div class="input-group"><label>Nom complet</label><input id="rn" type="text"/></div><div class="input-group"><label>Email</label><input id="re" type="email"/></div><div class="input-group"><label>Identifiant</label><input id="ri" type="text"/></div><div class="input-group"><label>Mot de passe</label><input id="rp" type="password"/></div><div class="input-group"><label>Institution</label><input id="rin" type="text"/></div><button class="btn-primary" id="rbtn" onclick="subReg()">Creer mon compte</button></div>`;
+  return`${hdr("Authentification",null,true)}<div class="content"><div class="auth-tabs"><div class="auth-tab ${S.authTab==="login"?"active":""}" onclick="setState({authTab:'login'})">Connexion</div><div class="auth-tab ${S.authTab==="register"?"active":""}" onclick="setState({authTab:'register'})">Inscription</div></div>${S.authTab==="login"?login:reg}</div>`;
+}
+
+function sDashboard(){
+  const items=[
+    {sc:"import",t:"Import des donnees",d:"Charger les 4 fichiers Excel",b:"NEW",c:"bg"},
+    {sc:"etccdi",t:"Calcul ETCCDI",d:"16 indices automatiques",b:"CALC",c:"bo"},
+    {sc:"debits",t:"Percentiles des debits",d:"Q5 Q10 Q50 Q90 Q95 annuels",b:"Q",c:"bb"},
+    {sc:"spearman",t:"Analyse Spearman",d:"Fusion + Correlation + Heatmap",b:"OS1",c:"bp"},
+    {sc:"os2",t:"Variabilite CWT",d:"Scalogrammes en ondelettes",b:"OS2",c:"bg"},
+    {sc:"os3",t:"Relations de phase",d:"XWT + WTC + Coherence",b:"OS3",c:"bb"},
+    {sc:"alertes",t:"Alertes hydroclimatiques",d:"Surveillance des seuils",b:"!",c:"br"},
+  ];
+  return`${hdr("Tableau de bord",S.user?.nom)}<div class="content"><div class="card stat-card"><div class="slbl">Bassin surveille</div><div class="sval">Oueme a Bonou</div><div class="sdtl">Benin · 1991–2020</div></div>${items.map(it=>`<div class="menu-item" onclick="setState({screen:'${it.sc}'})"><div class="card"><div class="menu-row"><div><div class="menu-title">${it.t}</div><div class="menu-desc">${it.d}</div></div><span class="badge ${it.c}">${it.b}</span></div></div></div>`).join("")}</div>${drw()}`;
+}
+
+function sImport(){
+  const CFG={
+    precip:{l:"Precipitations (25 stations)",u:"mm"},
+    tmax:{l:"Temperatures max Tmax (4 stations)",u:"C"},
+    tmin:{l:"Temperatures min Tmin (4 stations)",u:"C"},
+    debit:{l:"Debits journaliers (Bonou)",u:"m3/s"},
+  };
+  const n=Object.values(S.importData).filter(Boolean).length;
+  const cfg=CFG[S.importTab];
+  const d=S.importData[S.importTab];
+  const tabs=["precip","tmax","tmin","debit"].map(k=>`<div class="tab ${S.importTab===k?"active":""}" id="itab-${k}">${k.toUpperCase()}${S.importData[k]?" OK":""}</div>`).join("");
+  let preview="";
+  if(d){
+    const cols=Object.keys(d[0]).slice(0,5);
+    preview=`<div class="section-label">Apercu</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}${Object.keys(d[0]).length>5?"<th>...</th>":""}</tr></thead><tbody>${d.slice(0,5).map(r=>`<tr>${cols.map(c=>`<td>${r[c]??"-"}</td>`).join("")}${Object.keys(d[0]).length>5?"<td>...</td>":""}</tr>`).join("")}</tbody></table></div>`;
+  }
+  const expBtns=["precip","tmax","tmin","debit"].map(k=>`<button class="btn-secondary" id="ebtn-${k}" ${S.importData[k]?"":"disabled"} style="opacity:${S.importData[k]?1:.4}">Exporter ${k.toUpperCase()}</button>`).join("");
+  return`${hdr("Import des donnees","Upload - Validation - Export",true)}<div class="content"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">Progression</div><span style="color:#4ecba0;font-weight:700;">${n} / 4</span></div><div class="pt"><div class="pf" style="width:${n*25}%"></div></div></div><div class="tabs">${tabs}</div><div class="card"><div class="card-title">${cfg.l}</div><div class="card-sub">${cfg.u} · Journalier</div><div class="uz ${d?"loaded":""}"><input type="file" id="fimport" accept=".xlsx,.xls,.csv"/><div class="ui">${d?"OK":"📂"}</div><div class="ul">${S.importFiles[S.importTab]||"Cliquer pour uploader"}</div><div class="uh">${d?d.length.toLocaleString()+" lignes":"Formats: .xlsx .xls .csv"}</div></div>${preview}</div><div class="card"><div class="card-title">Export standardise</div>${expBtns}</div></div>${drw()}`;
+}
+
+function sETCCDI(){
+  const r=S.etccdiResults;
+  let preview="";
+  if(r&&r.precip){
+    const st=Object.keys(r.precip)[0],d=r.precip[st];
+    preview+=`<div class="card"><div class="card-title">Precipitations — ${st}</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${d.annees.slice(0,5).map((an,i)=>`<tr><td class="hl">${an}</td>${["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"].map(k=>`<td>${d[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+  }
+  if(r&&r.temp){
+    const st=Object.keys(r.temp)[0],d=r.temp[st];
+    preview+=`<div class="card"><div class="card-title">Temperatures — ${st}</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${d.annees.slice(0,5).map((an,i)=>`<tr><td class="hlo">${an}</td>${["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"].map(k=>`<td>${d[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+  }
+  return`${hdr("Calcul ETCCDI","16 indices automatiques",true)}<div class="content"><div class="card"><div class="card-title">Donnees disponibles</div>${[["precip","Precipitations (25 stations)"],["tmax","Tmax (4 stations)"],["tmin","Tmin (4 stations)"]].map(([k,l])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;margin-bottom:6px;"><span style="font-size:12px;color:#8ab5a5;">${l}</span><span style="font-weight:700;font-size:11px;color:${S.importData[k]?"#4ecba0":"#e06060"};">${S.importData[k]?"Charge":"Manquant"}</span></div>`).join("")}</div>${S.etccdiStatus?`<div class="alert ${S.etccdiStatus.includes("succes")?"alert-success":S.etccdiStatus.includes("Erreur")?"alert-error":"alert-info"}">${S.etccdiStatus}</div>`:""}<button class="btn-primary" onclick="runETCCDI()">Lancer le calcul des 16 indices</button>${preview}${r?'<button class="btn-secondary" onclick="expETCCDI()">Exporter les indices (Excel)</button>':""}</div>${drw()}`;
+}
+
+function sDebits(){
+  if(S.importData.debit&&!S.debitResults){S.debitResults=calcDebits(S.importData.debit);}
+  const r=S.debitResults;
+  let preview="",stats="";
+  if(r){
+    preview=`<div class="card"><div class="card-title">Resultats annuels (m3/s)</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","Q5","Q10","Q50","Q90","Q95","Qmoy"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${r.annees.map((an,i)=>`<tr><td class="hl">${an}</td>${["Q5","Q10","Q50","Q90","Q95","Qmoy"].map(k=>`<td>${r[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+    stats=`<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[["Q5","#4a9fe0"],["Q50","#4ecba0"],["Q95","#e06060"],["Qmoy","#e0a060"]].map(([k,c])=>{const v=r[k].filter(x=>x!==null);const m=v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"-";return`<div style="background:#0d2235;padding:10px;border-radius:8px;text-align:center;"><div style="font-size:10px;color:#6a9080;">${k}</div><div style="font-weight:800;color:${c};font-size:18px;">${m}</div><div style="font-size:9px;color:#4a6a5a;">m3/s moy.</div></div>`;}).join("")}</div></div>`;
+  }
+  return`${hdr("Percentiles des debits","Q5 Q10 Q50 Q90 Q95 annuels",true)}<div class="content"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;"><span style="font-size:12px;color:#8ab5a5;">Debits journaliers (Bonou)</span><span style="font-weight:700;font-size:11px;color:${S.importData.debit?"#4ecba0":"#e06060"};">${S.importData.debit?"Charge":"Manquant"}</span></div></div>${!r?'<div class="alert alert-info">Chargez le fichier debits dans Import.</div>':""}${preview}${stats}${r?'<button class="btn-secondary" onclick="expDebits()">Exporter les percentiles (Excel)</button>':""}</div>${drw()}`;
+}
+
+function sSpearman(){
+  const r=S.spearmanResults;
+  const qSel=(q,grp)=>{
+    const colors={etiage:"#4a9fe0",crue:"#e06060"};
+    const cur=grp==="etiage"?S.spearmanQetiage:S.spearmanQcrue;
+    return`<div id="qbtn-${q}" style="flex:1;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:center;border:${cur===q?`1px solid ${colors[grp]}`:"1px solid #234055"};background:${cur===q?`rgba(${grp==="etiage"?"74,159,224":"220,80,80"},.15)`:"#0d2235"};color:${cur===q?colors[grp]:"#6a9080"};">${q}</div>`;
+  };
+  let heatHtml="";
+  if(r){
+    const{mat,debits,indices}=r;
+    const sig=[];
+    indices.forEach(idx=>debits.forEach(d=>{const c=mat[idx]&&mat[idx][d];if(c&&c.pval!==null&&c.pval<0.05)sig.push({idx,d,rho:c.rho,pval:c.pval});}));
+    sig.sort((a,b)=>Math.abs(b.rho)-Math.abs(a.rho));
+    const grps=[{l:"Precipitations",li:["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"]},{l:"Temperatures",li:["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"]}];
+    heatHtml=`<div class="card"><div class="card-title">Heatmap Spearman</div><div class="card-sub">* p &lt; 0.05 · ${sig.length} paires significatives</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;min-width:100%;"><thead><tr><th style="padding:4px 8px;color:#6a9080;text-align:left;border-bottom:1px solid #234055;">Indice</th>${debits.map(d=>`<th style="padding:4px 10px;color:#4ecba0;text-align:center;border-bottom:1px solid #234055;">${d}</th>`).join("")}</tr></thead><tbody>`;
+    grps.forEach(grp=>{
+      const list=grp.li.filter(i=>indices.includes(i));
+      if(!list.length)return;
+      heatHtml+=`<tr><td colspan="${debits.length+1}" style="padding:4px 8px;font-size:10px;font-weight:700;color:#5a7a6a;text-transform:uppercase;background:#0d1b2a;">${grp.l}</td></tr>`;
+      list.forEach(idx=>{
+        if(!mat[idx])return;
+        heatHtml+=`<tr><td style="padding:5px 8px;color:#e8f4f0;font-weight:600;white-space:nowrap;border-bottom:1px solid #1a2f42;">${idx}</td>`;
+        debits.forEach(d=>{
+          const c=mat[idx]&&mat[idx][d];
+          if(!c||c.rho===null){heatHtml+=`<td style="padding:5px 8px;text-align:center;background:#1a2f42;">-</td>`;return;}
+          const bg=heatColor(c.rho,c.pval),s=c.pval!==null&&c.pval<0.05;
+          heatHtml+=`<td style="padding:5px 8px;text-align:center;background:${bg};border:${s?"2px solid "+(c.rho>0?"#4ecba0":"#e06060"):"1px solid #0d1b2a"};border-radius:3px;"><span style="color:#fff;font-weight:${s?"700":"400"};">${c.rho.toFixed(2)}${s?"*":""}</span></td>`;
+        });
+        heatHtml+=`</tr>`;
+      });
+    });
+    heatHtml+=`</tbody></table></div></div>`;
+    if(sig.length){
+      heatHtml+=`<div class="card"><div class="card-title">Paires significatives (${sig.length})</div>`;
+      sig.forEach(p=>{
+        const col=p.rho>0?"#4ecba0":"#e06060";
+        heatHtml+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;margin-bottom:5px;"><span style="font-size:12px;color:#e8f4f0;font-weight:600;">${p.idx} → ${p.d}</span><div style="text-align:right;"><div style="font-size:12px;color:${col};font-weight:700;">rho=${p.rho>0?"+":""}${p.rho.toFixed(3)}*</div><div style="font-size:10px;color:#4a6a5a;">p=${p.pval.toFixed(4)}</div></div></div>`;
+      });
+      heatHtml+=`</div>`;
+    }
+  }
+  return`${hdr("Analyse Spearman","Correlation + Heatmap",true)}<div class="content"><div class="card"><div class="card-title">Charger le fichier fusionne</div><div class="card-sub">Format: Annee | Q5 | Q50 | Q95 | PRCPTOT | ... | CSDI</div><div class="uz ${S.baseDirecte?"loaded":""}"><input type="file" id="fbase" accept=".xlsx,.xls,.csv"/><div class="ui">${S.baseDirecte?"OK":"📂"}</div><div class="ul">${S.baseDirecteFile||"Cliquer pour uploader"}</div><div class="uh">${S.baseDirecte?S.baseDirecte.length+" lignes · "+Object.keys(S.baseDirecte[0]).length+" colonnes":"Formats: .xlsx .xls .csv"}</div></div>${S.baseDirecte?`<div style="font-size:10px;color:#6a9080;padding:6px 8px;background:#0d2235;border-radius:6px;margin-top:8px;word-break:break-all;">${Object.keys(S.baseDirecte[0]).join(" | ")}</div>`:""}</div><div class="card"><div class="card-title">Choix des indicateurs</div><div style="margin-bottom:10px;"><div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur d etiage</div><div style="display:flex;gap:8px;">${["Q5","Q10"].map(q=>qSel(q,"etiage")).join("")}</div></div><div><div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur de crue</div><div style="display:flex;gap:8px;">${["Q90","Q95"].map(q=>qSel(q,"crue")).join("")}</div></div><div style="margin-top:10px;padding:8px;background:#0d2235;border-radius:8px;font-size:11px;color:#8ab5a5;text-align:center;">Debits: <strong style="color:#4ecba0;">${S.spearmanQetiage} · Q50 · ${S.spearmanQcrue}</strong></div></div><button class="btn-primary" onclick="runSpearman()">Calculer la matrice de Spearman</button>${r?'<button class="btn-secondary" onclick="expSpearman()">Exporter la matrice (Excel)</button>':""} ${heatHtml}</div>${drw()}`;
+}
+
+function sOS2(){return`${hdr("Variabilite CWT","Scalogrammes en ondelettes",true)}<div class="content"><div class="card"><div class="card-title">OS2 — En developpement</div><div class="ib">Les scalogrammes seront calcules automatiquement depuis les donnees importees.</div></div></div>${drw()}`;}
+function sOS3(){return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content"><div class="card"><div class="card-title">OS3 — En developpement</div><div class="ib">Les 9 paires significatives seront calculees automatiquement.</div></div></div>${drw()}`;}
+function sAlertes(){
+  const r=S.debitResults;
+  let body='<div class="alert alert-info">Calculez les percentiles de debits pour voir les alertes.</div>';
+  if(r){
+    const i=r.annees.length-1,an=r.annees[i];
+    const q95=r.Q95[i],q5=r.Q5[i],q50=r.Q50[i];
+    body=`<div class="card"><div class="card-title">Alertes — ${an}</div>${q95>500?'<div class="alert alert-error">Q95 = '+q95+' m3/s — Risque crue eleve</div>':''}${q5<5?'<div class="alert alert-error">Q5 = '+q5+' m3/s — Risque etiage severe</div>':''}<div style="font-size:12px;color:#8ab5a5;">Q5=${q5} · Q50=${q50} · Q95=${q95}</div></div>`;
+  }
+  return`${hdr("Alertes hydroclimatiques","Surveillance des seuils",true)}<div class="content">${body}</div>${drw()}`;
+}
+function sProfil(){
+  return`${hdr("Mon profil",null,true)}<div class="content"><div class="card" style="text-align:center;padding:24px 16px;"><div class="avatar">👤</div><div style="font-size:16px;font-weight:700;color:#fff;">${S.user?.nom||"Utilisateur"}</div><div style="font-size:12px;color:#4ecba0;margin-top:3px;">${S.user?.role||"scientifique"}</div></div><div class="card"><div style="font-size:12px;color:#8ab5a5;line-height:2;"><div style="display:flex;justify-content:space-between;"><span>Institution</span><span style="color:#e8f4f0;">${S.user?.institution||"Non specifiee"}</span></div><div style="display:flex;justify-content:space-between;"><span>Bassin</span><span style="color:#e8f4f0;">Oueme a Bonou</span></div></div></div><button class="btn-danger" onclick="doLogout()">Se deconnecter</button></div>${drw()}`;
+}
+
+// ---- ACTIONS ----
+async function subLogin(){
+  const e=document.getElementById("le")?.value?.trim(),p=document.getElementById("lp")?.value;
+  const btn=document.getElementById("lbtn"),al=document.getElementById("la");
+  if(!e||!p){if(al)al.innerHTML='<div class="alert alert-error">Remplissez tous les champs.</div>';return;}
+  if(btn){btn.disabled=true;btn.textContent="Connexion...";}
+  try{const prof=await doLogin(e,p);setState({user:prof,screen:"dashboard"});}
+  catch(err){if(al)al.innerHTML=`<div class="alert alert-error">${err.message}</div>`;if(btn){btn.disabled=false;btn.textContent="Se connecter";}}
+}
+async function subReg(){
+  const n=document.getElementById("rn")?.value?.trim(),e=document.getElementById("re")?.value?.trim();
+  const i=document.getElementById("ri")?.value?.trim(),p=document.getElementById("rp")?.value;
+  const ins=document.getElementById("rin")?.value?.trim();
+  const btn=document.getElementById("rbtn"),al=document.getElementById("ra");
+  if(!n||!e||!i||!p||!ins){if(al)al.innerHTML='<div class="alert alert-error">Remplissez tous les champs.</div>';return;}
+  if(btn){btn.disabled=true;btn.textContent="Creation...";}
+  try{
+    await doRegister(n,e,i,p,ins,S.authRole);
+    setState({screen:"auth",authTab:"login"});
+    setTimeout(()=>{const a=document.getElementById("la");if(a)a.innerHTML='<div class="alert alert-success">Compte cree ! Verifie ta boite mail.</div>';},100);
+  }catch(err){if(al)al.innerHTML=`<div class="alert alert-error">${err.message}</div>`;if(btn){btn.disabled=false;btn.textContent="Creer mon compte";}}
+}
+function runETCCDI(){
+  const precip=S.importData.precip,tmax=S.importData.tmax,tmin=S.importData.tmin;
+  if(!precip&&!(tmax&&tmin)){alert("Chargez vos donnees dans Import.");return;}
+  setState({etccdiStatus:"Calcul en cours..."});
+  setTimeout(()=>{
+    try{
+      const precipR=precip?calcPrecip(precip):null;
+      const tempR=(tmax&&tmin)?calcTemp(tmax,tmin):null;
+      setState({etccdiResults:{precip:precipR,temp:tempR},etccdiStatus:"Calcul termine avec succes"});
+    }catch(err){setState({etccdiStatus:"Erreur: "+err.message});}
+  },100);
+}
+function expETCCDI(){
+  const r=S.etccdiResults;if(!r)return;
+  const sheets=[];
+  if(r.precip){const sts=Object.keys(r.precip);const rows=[["Annee","Station","PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"]];sts.forEach(st=>{const d=r.precip[st];d.annees.forEach((an,i)=>rows.push([an,st,d.PRCPTOT[i],d.RX1day[i],d.Rx5day[i],d.R10[i],d.R20[i],d.SDII[i],d.CDD[i],d.CWD[i]]));});sheets.push({name:"Precipitations",data:rows});}
+  if(r.temp){const sts=Object.keys(r.temp);const rows=[["Annee","Station","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI","DTR"]];sts.forEach(st=>{const d=r.temp[st];d.annees.forEach((an,i)=>rows.push([an,st,d.SU25[i],d.TR20[i],d.TN10p[i],d.TX10p[i],d.TN90p[i],d.TX90p[i],d.WSDI[i],d.CSDI[i],d.DTR[i]]));});sheets.push({name:"Temperatures",data:rows});}
+  xls(sheets,"Indices_ETCCDI.xlsx");
+}
+function expDebits(){
+  const r=S.debitResults;if(!r)return;
+  const rows=[["Annee","Q5","Q10","Q50","Q90","Q95","Qmoy","Qmin","Qmax"]];
+  r.annees.forEach((an,i)=>rows.push([an,r.Q5[i],r.Q10[i],r.Q50[i],r.Q90[i],r.Q95[i],r.Qmoy[i],r.Qmin[i],r.Qmax[i]]));
+  xls([{name:"Percentiles",data:rows}],"Percentiles_Debits.xlsx");
+}
+function runSpearman(){
+  const base=S.baseDirecte;
+  if(!base||base.length<3){alert("Chargez le fichier Excel fusionne.");return;}
+  const cols=Object.keys(base[0]);
+  const ac=cols.find(c=>c.toLowerCase().includes("ann")||c.toLowerCase().includes("year"))||cols[0];
+  const dkws=["q5","q10","q50","q90","q95","qmoy"];
+  let dc=cols.filter(c=>dkws.some(k=>c.toLowerCase().replace(/[^a-z0-9]/g,"")===k));
+  if(!dc.length)dc=cols.slice(1,4);
+  const chosen=[];
+  ["Q50",S.spearmanQetiage,S.spearmanQcrue].forEach(q=>{
+    const m=cols.find(c=>c.toLowerCase().replace(/[^a-z0-9]/g,"")==q.toLowerCase().replace(/[^a-z0-9]/g,""));
+    if(m&&!chosen.includes(m))chosen.push(m);
+  });
+  const final=chosen.length?chosen:dc.slice(0,3);
+  const indCols=cols.filter(c=>c!==ac&&!dc.includes(c));
+  const mat={};
+  indCols.forEach(idx=>{
+    mat[idx]={};
+    const x=base.map(r=>parseNum(r[idx]));
+    final.forEach(d=>{mat[idx][d]=spearman(x,base.map(r=>parseNum(r[d])));});
+  });
+  setState({spearmanResults:{mat,debits:final,indices:indCols}});
+}
+function expSpearman(){
+  const r=S.spearmanResults;if(!r)return;
+  const{mat,debits,indices}=r;
+  const rhoRows=[["Indice",...debits]];
+  const pRows=[["Indice",...debits]];
+  indices.forEach(idx=>{
+    rhoRows.push([idx,...debits.map(d=>mat[idx]&&mat[idx][d]?mat[idx][d].rho:null)]);
+    pRows.push([idx,...debits.map(d=>mat[idx]&&mat[idx][d]?mat[idx][d].pval:null)]);
+  });
+  xls([{name:"Rho_Spearman",data:rhoRows},{name:"P_values",data:pRows}],"Matrice_Spearman.xlsx");
+}
+
+// ---- EVENTS ----
+function attachEvents(){
+  // Import tabs
+  ["precip","tmax","tmin","debit"].forEach(k=>{
+    const el=document.getElementById("itab-"+k);
+    if(el)el.onclick=()=>setState({importTab:k});
+  });
+  // File import
+  const fi=document.getElementById("fimport");
+  if(fi)fi.onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    lire(f,data=>{
+      const k=S.importTab;
+      S.importData[k]=data;S.importFiles[k]=f.name;
+      if(k==="debit")S.debitResults=null;
+      setState({importTab:k});
+    });
+  };
+  // Export buttons
+  ["precip","tmax","tmin","debit"].forEach(k=>{
+    const el=document.getElementById("ebtn-"+k);
+    if(el)el.onclick=()=>{
+      const d=S.importData[k];if(!d)return;
+      const nm={precip:"Precipitations",tmax:"Tmax",tmin:"Tmin",debit:"Debits"};
+      const fn={precip:"Precipitations_25stations.xlsx",tmax:"Tmax_4stations.xlsx",tmin:"Tmin_4stations.xlsx",debit:"Debits_Bonou.xlsx"};
+      xls([{name:nm[k],data:[Object.keys(d[0]),...d.map(r=>Object.values(r))]}],fn[k]);
+    };
+  });
+  // File base spearman
+  const fb=document.getElementById("fbase");
+  if(fb)fb.onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    lire(f,data=>setState({baseDirecte:data,baseDirecteFile:f.name,spearmanResults:null}));
+  };
+  // Q buttons
+  ["Q5","Q10"].forEach(q=>{
+    const el=document.getElementById("qbtn-"+q);
+    if(el)el.onclick=()=>setState({spearmanQetiage:q});
+  });
+  ["Q90","Q95"].forEach(q=>{
+    const el=document.getElementById("qbtn-"+q);
+    if(el)el.onclick=()=>setState({spearmanQcrue:q});
+  });
+}
+
+// ---- RENDER ----
+const SCR={
+  accueil:sAccueil,auth:sAuth,dashboard:sDashboard,
+  import:sImport,etccdi:sETCCDI,debits:sDebits,
+  spearman:sSpearman,os2:sOS2,os3:sOS3,
+  alertes:sAlertes,profil:sProfil,
+};
+function render(){
+  document.getElementById("app").innerHTML=(SCR[S.screen]||sAccueil)();
+  attachEvents();
+}
+render();
+</script>
+</body>
+</html>
