@@ -105,8 +105,8 @@ let S={
   importTab:"precip",
   etccdiResults:null,etccdiStatus:"",
   debitResults:null,
-  baseDirecte:null,baseDirecteFile:null,
   spearmanResults:null,
+  cwtResults:null,cwtStatus:"",cwtZoom:null,
   spearmanQetiage:"Q5",spearmanQcrue:"Q95",
 };
 function setState(o){S={...S,...o};render();}
@@ -150,8 +150,6 @@ function pct(arr,p){
   const lo=Math.floor(idx),hi=Math.ceil(idx);
   return lo===hi?s[lo]:s[lo]+(s[hi]-s[lo])*(idx-lo);
 }
-function maxRun(arr,cond){let mx=0,cur=0;for(const v of arr){if(cond(v)){cur++;if(cur>mx)mx=cur;}else cur=0;}return mx;}
-function sumRuns(arr,cond,ml){let t=0,i=0;while(i<arr.length){if(cond(arr[i])){let j=i;while(j<arr.length&&cond(arr[j]))j++;if((j-i)>=ml)t+=(j-i);i=j;}else i++;}return t;}
 
 // ---- AUTH ----
 async function doLogin(email,pass){
@@ -184,7 +182,7 @@ function trad(m){
   return m;
 }
 
-// ---- CALCUL PRECIP ----
+// ---- CALCUL PRECIP (Fidèle au script MATLAB) ----
 function calcPrecip(data){
   if(!data||!data.length)return null;
   const cols=Object.keys(data[0]);
@@ -192,30 +190,77 @@ function calcPrecip(data){
   const sts=cols.filter(c=>c!==dc);
   const yrs=[...new Set(data.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
   const res={};
+  
   sts.forEach(st=>{
     const PRCPTOT=[],RX1day=[],Rx5day=[],R10=[],R20=[],SDII=[],CDD=[],CWD=[];
-    yrs.forEach(an=>{
-      const rows=data.filter(r=>getYear(r[dc])===an);
-      const P=rows.map(r=>{const v=parseNum(r[st]);return(v===null||isNaN(v))?0:v;});
-      const wet=P.map(p=>p>=1.0);
-      const wv=P.filter((_,i)=>wet[i]);
-      PRCPTOT.push(+wv.reduce((a,b)=>a+b,0).toFixed(2));
-      RX1day.push(+Math.max(...P).toFixed(2));
-      let mx5=0;
-      for(let i=0;i<=P.length-5;i++){const s5=P[i]+P[i+1]+P[i+2]+P[i+3]+P[i+4];if(s5>mx5)mx5=s5;}
-      Rx5day.push(+mx5.toFixed(2));
-      R10.push(P.filter(p=>p>=10).length);
-      R20.push(P.filter(p=>p>=20).length);
-      SDII.push(wv.length>0?+(wv.reduce((a,b)=>a+b,0)/wv.length).toFixed(3):0);
-      CDD.push(maxRun(P,p=>p<1.0));
-      CWD.push(maxRun(P,p=>p>=1.0));
+    
+    // Extraire et nettoyer la colonne P
+    const P = data.map(r=>{
+      const v = parseNum(r[st]);
+      return (v===null||isNaN(v))?0:v;
     });
+
+    yrs.forEach(an=>{
+      const rowsIdx = data.map((r,i)=>getYear(r[dc])===an);
+      const Py = P.filter((_,i)=>rowsIdx[i]);
+      if(!Py.length){
+        PRCPTOT.push(0); RX1day.push(0); Rx5day.push(0); R10.push(0); R20.push(0); SDII.push(0); CDD.push(0); CWD.push(0);
+        return;
+      }
+      
+      const wet = Py.map(p=>p>=1.0);
+      const dry = wet.map(w=>!w);
+
+      // PRCPTOT = somme des jours >= 1mm
+      const wetVals = Py.filter((_,i)=>wet[i]);
+      PRCPTOT.push(wetVals.reduce((a,b)=>a+b,0));
+
+      // RX1day = max journalier
+      RX1day.push(Math.max(...Py));
+
+      // Rx5day = max glissant sur 5 jours (movsum [0 4])
+      let mx5=0;
+      const n5 = Py.length - 4;
+      if(n5 > 0){
+        for(let i=0; i<n5; i++){
+          let s5 = Py[i]+Py[i+1]+Py[i+2]+Py[i+3]+Py[i+4];
+          if(s5 > mx5) mx5 = s5;
+        }
+      } else {
+        mx5 = Py.reduce((a,b)=>a+b,0);
+      }
+      Rx5day.push(mx5);
+
+      // R10 et R20
+      R10.push(Py.filter(p=>p>=10.0).length);
+      R20.push(Py.filter(p=>p>=20.0).length);
+
+      // SDII
+      SDII.push(wetVals.length>0 ? (wetVals.reduce((a,b)=>a+b,0)/wetVals.length) : 0);
+
+      // CDD (Consecutive Dry Days, < 1.0mm)
+      let max_len=0, cur=0;
+      for(let i=0; i<dry.length; i++){
+        if(dry[i]){ cur++; if(cur>max_len) max_len=cur; }
+        else { cur=0; }
+      }
+      CDD.push(max_len);
+
+      // CWD (Consecutive Wet Days, >= 1.0mm)
+      max_len=0; cur=0;
+      for(let i=0; i<wet.length; i++){
+        if(wet[i]){ cur++; if(cur>max_len) max_len=cur; }
+        else { cur=0; }
+      }
+      CWD.push(max_len);
+    });
+
     res[st]={annees:yrs,PRCPTOT,RX1day,Rx5day,R10,R20,SDII,CDD,CWD};
   });
   return res;
 }
 
-// ---- CALCUL TEMP ----
+// ---- CALCUL TEMP (Fidèle au script MATLAB) ----
 function calcTemp(dataTX,dataTN){
   if(!dataTX||!dataTX.length||!dataTN||!dataTN.length)return null;
   const cols=Object.keys(dataTX[0]);
@@ -224,8 +269,12 @@ function calcTemp(dataTX,dataTN){
   const colsTN=Object.keys(dataTN[0]);
   const dcTN=colsTN.find(c=>c.toLowerCase().includes("date"))||colsTN[0];
   const yrs=[...new Set(dataTX.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
-  const ref0=yrs[0],ref1=ref0+29;
+  
+  const ref_debut = yrs[0];
+  const ref_fin = ref_debut + 29;
+  const seqlen = 6;
   const res={};
+
   sts.forEach(st=>{
     const stTN=colsTN.find(c=>c!==dcTN&&c.toLowerCase().replace(/[^a-z]/g,"")==st.toLowerCase().replace(/[^a-z]/g,""))||colsTN.find(c=>c!==dcTN);
     const TX=dataTX.map(r=>parseNum(r[st]));
@@ -233,69 +282,112 @@ function calcTemp(dataTX,dataTN){
     const nr=Math.min(TX.length,TN.length);
     const doys=dataTX.slice(0,nr).map(r=>getDOY(r[dc]));
     const yall=dataTX.slice(0,nr).map(r=>getYear(r[dc]));
-    const inRef=yall.map(y=>y!==null&&y>=ref0&&y<=ref1);
+
+    // Percentiles sur période de référence (ref_debut à ref_fin)
+    const inRef=yall.map(y=>y!==null&&y>=ref_debut&&y<=ref_fin);
     const TXr=TX.filter((_,i)=>inRef[i]&&TX[i]!==null);
     const TNr=TN.filter((_,i)=>inRef[i]&&TN[i]!==null);
     const dr=doys.filter((_,i)=>inRef[i]);
+
     const p10TX=new Array(367).fill(null),p90TX=new Array(367).fill(null);
     const p10TN=new Array(367).fill(null),p90TN=new Array(367).fill(null);
-    for(let j=1;j<=366;j++){
+
+    for(let j=1; j<=366; j++){
+      // Fenêtre glissante de 11 jours centrée mod 366
       const win=[];
-      for(let d=j-5;d<=j+5;d++)win.push(((d-1)%366+366)%366+1);
+      for(let d=j-5; d<=j+5; d++){
+        win.push(((d-1)%366+366)%366+1);
+      }
       const mTX=dr.map(d=>win.includes(d));
       const txW=TXr.filter((_,i)=>mTX[i]);
       const tnW=TNr.filter((_,i)=>mTX[i]);
-      if(txW.length>=5){p10TX[j]=pct(txW,10);p90TX[j]=pct(txW,90);}
-      if(tnW.length>=5){p10TN[j]=pct(tnW,10);p90TN[j]=pct(tnW,90);}
+      if(txW.length>=5){
+        p10TX[j]=pct(txW,10); p90TX[j]=pct(txW,90);
+      }
+      if(tnW.length>=5){
+        p10TN[j]=pct(tnW,10); p90TN[j]=pct(tnW,90);
+      }
     }
-    const t10x=doys.map(d=>p10TX[Math.min(d,366)]);
-    const t90x=doys.map(d=>p90TX[Math.min(d,366)]);
-    const t10n=doys.map(d=>p10TN[Math.min(d,366)]);
-    const t90n=doys.map(d=>p90TN[Math.min(d,366)]);
+
+    const thr_TX10 = doys.map(d=>p10TX[Math.min(d,366)]);
+    const thr_TX90 = doys.map(d=>p90TX[Math.min(d,366)]);
+    const thr_TN10 = doys.map(d=>p10TN[Math.min(d,366)]);
+    const thr_TN90 = doys.map(d=>p90TN[Math.min(d,366)]);
+
     const SU25=[],TR20=[],TN10p=[],TX10p=[],TN90p=[],TX90p=[],WSDI=[],CSDI=[],DTR=[];
+
     yrs.forEach(an=>{
-      const idx=[];for(let i=0;i<nr;i++)idx.push(yall[i]===an);
-      const n=idx.filter(Boolean).length;
-      if(n===0){SU25.push(0);TR20.push(0);TN10p.push(0);TX10p.push(0);TN90p.push(0);TX90p.push(0);WSDI.push(0);CSDI.push(0);DTR.push(null);return;}
-      const tx=TX.filter((_,i)=>idx[i]);
-      const tn=TN.filter((_,i)=>idx[i]);
-      const _t10x=t10x.filter((_,i)=>idx[i]);
-      const _t90x=t90x.filter((_,i)=>idx[i]);
-      const _t10n=t10n.filter((_,i)=>idx[i]);
-      const _t90n=t90n.filter((_,i)=>idx[i]);
+      const idx = yall.map(y=>y===an);
+      const n = idx.filter(Boolean).length;
+      if(n===0){
+        SU25.push(0); TR20.push(0); TN10p.push(0); TX10p.push(0); TN90p.push(0); TX90p.push(0); WSDI.push(0); CSDI.push(0); DTR.push(null);
+        return;
+      }
+      const tx = TX.filter((_,i)=>idx[i]);
+      const tn = TN.filter((_,i)=>idx[i]);
+      const t10x = thr_TX10.filter((_,i)=>idx[i]);
+      const t90x = thr_TX90.filter((_,i)=>idx[i]);
+      const t10n = thr_TN10.filter((_,i)=>idx[i]);
+      const t90n = thr_TN90.filter((_,i)=>idx[i]);
+
       SU25.push(tx.filter(v=>v!==null&&v>25).length);
       TR20.push(tn.filter(v=>v!==null&&v>20).length);
-      TN10p.push(+(100*tn.filter((v,i)=>v!==null&&_t10n[i]!==null&&v<_t10n[i]).length/n).toFixed(3));
-      TX10p.push(+(100*tx.filter((v,i)=>v!==null&&_t10x[i]!==null&&v<_t10x[i]).length/n).toFixed(3));
-      TN90p.push(+(100*tn.filter((v,i)=>v!==null&&_t90n[i]!==null&&v>_t90n[i]).length/n).toFixed(3));
-      TX90p.push(+(100*tx.filter((v,i)=>v!==null&&_t90x[i]!==null&&v>_t90x[i]).length/n).toFixed(3));
-      const dv=tx.map((v,i)=>v!==null&&tn[i]!==null?v-tn[i]:null).filter(v=>v!==null);
-      DTR.push(dv.length>0?+(dv.reduce((a,b)=>a+b,0)/dv.length).toFixed(3):null);
-      WSDI.push(sumRuns(tx.map((v,i)=>v!==null&&_t90x[i]!==null&&v>_t90x[i]),v=>v,6));
-      CSDI.push(sumRuns(tn.map((v,i)=>v!==null&&_t10n[i]!==null&&v<_t10n[i]),v=>v,6));
+      TN10p.push(100*tn.filter((v,i)=>v!==null&&t10n[i]!==null&&v<t10n[i]).length/n);
+      TX10p.push(100*tx.filter((v,i)=>v!==null&&t10x[i]!==null&&v<t10x[i]).length/n);
+      TN90p.push(100*tn.filter((v,i)=>v!==null&&t90n[i]!==null&&v>t90n[i]).length/n);
+      TX90p.push(100*tx.filter((v,i)=>v!==null&&t90x[i]!==null&&v>t90x[i]).length/n);
+
+      const dv = tx.map((v,i)=>v!==null&&tn[i]!==null?v-tn[i]:null).filter(v=>v!==null);
+      DTR.push(dv.length>0 ? (dv.reduce((a,b)=>a+b,0)/dv.length) : null);
+
+      // WSDI (Spell length >= seqlen where tx > t90x)
+      const hot = tx.map((v,i)=>v!==null&&t90x[i]!==null&&v>t90x[i]);
+      let total_w=0, i=0;
+      while(i<hot.length){
+        if(hot[i]){
+          let j=i; while(j<hot.length&&hot[j]) j++;
+          if((j-i)>=seqlen) total_w+=(j-i);
+          i=j;
+        } else { i++; }
+      }
+      WSDI.push(total_w);
+
+      // CSDI (Spell length >= seqlen where tn < t10n)
+      const cold = tn.map((v,i)=>v!==null&&t10n[i]!==null&&v<t10n[i]);
+      let total_c=0, ii=0;
+      while(ii<cold.length){
+        if(cold[ii]){
+          let jj=ii; while(jj<cold.length&&cold[jj]) jj++;
+          if((jj-ii)>=seqlen) total_c+=(jj-ii);
+          ii=jj;
+        } else { ii++; }
+      }
+      CSDI.push(total_c);
     });
+
     res[st]={annees:yrs,SU25,TR20,TN10p,TX10p,TN90p,TX90p,WSDI,CSDI,DTR};
   });
   return res;
 }
 
-// ---- CALCUL DEBITS ----
+// ---- CALCUL DEBITS (Modifié : Q5, Q10, Q50, Q90, Q95 uniquement) ----
 function calcDebits(data){
   if(!data||!data.length)return null;
   const cols=Object.keys(data[0]);
   const dc=cols.find(c=>c.toLowerCase().includes("date"))||cols[0];
   const qc=cols.find(c=>c!==dc)||cols[1];
   const yrs=[...new Set(data.map(r=>getYear(r[dc])).filter(Boolean))].sort((a,b)=>a-b);
-  const Q5=[],Q10=[],Q50=[],Q90=[],Q95=[],Qmoy=[],Qmin=[],Qmax=[];
+  const Q5=[],Q10=[],Q50=[],Q90=[],Q95=[];
   yrs.forEach(an=>{
     const vals=data.filter(r=>getYear(r[dc])===an).map(r=>parseNum(r[qc])).filter(v=>v!==null&&!isNaN(v)).sort((a,b)=>a-b);
-    if(!vals.length){Q5.push(null);Q10.push(null);Q50.push(null);Q90.push(null);Q95.push(null);Qmoy.push(null);Qmin.push(null);Qmax.push(null);return;}
-    Q5.push(+pct(vals,5).toFixed(3));Q10.push(+pct(vals,10).toFixed(3));Q50.push(+pct(vals,50).toFixed(3));
-    Q90.push(+pct(vals,90).toFixed(3));Q95.push(+pct(vals,95).toFixed(3));
-    Qmoy.push(+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(3));
-    Qmin.push(+Math.min(...vals).toFixed(3));Qmax.push(+Math.max(...vals).toFixed(3));
+    if(!vals.length){Q5.push(null);Q10.push(null);Q50.push(null);Q90.push(null);Q95.push(null);return;}
+    Q5.push(pct(vals,5));
+    Q10.push(pct(vals,10));
+    Q50.push(pct(vals,50));
+    Q90.push(pct(vals,90));
+    Q95.push(pct(vals,95));
   });
-  return{annees:yrs,Q5,Q10,Q50,Q90,Q95,Qmoy,Qmin,Qmax};
+  return{annees:yrs,Q5,Q10,Q50,Q90,Q95};
 }
 
 // ---- SPEARMAN ----
@@ -348,19 +440,168 @@ function lgm(x){
   for(let j=0;j<6;j++){y++;ser+=c[j]/y;}
   return -tmp+Math.log(2.5066282746310005*ser/x);
 }
-function calcMat(base,debits){
-  if(!base||base.length<3)return null;
-  const inds=["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"];
-  const mat={};
-  inds.forEach(idx=>{
-    mat[idx]={};
-    const x=base.map(r=>parseNum(r[idx]));
-    debits.forEach(d=>{mat[idx][d]=spearman(x,base.map(r=>parseNum(r[d])));});
-  });
-  return{mat,debits,indices:inds.filter(i=>base[0].hasOwnProperty(i))};
+function heatColor(rho,pval){
+  if(rho===null)return"#1a2f42";
+  const sig=pval!==null&&pval<0.05,a=Math.abs(rho);
+  if(rho>0)return sig?`rgb(0,${100+Math.round(a*180)},${140+Math.round(a*60)})`: `rgba(78,203,160,${0.1+a*0.4})`;
+  return sig?`rgb(${150+Math.round(a*100)},40,40)`:`rgba(224,96,96,${0.1+a*0.4})`;
 }
 
-// ---- EXPORT ----
+// ==================== CWT (Torrence & Compo 1998, Morlet) ====================
+// FFT/IFFT radix-2 iteratif (re/im : Float64Array, longueur puissance de 2, modifie en place)
+function fftRadix2(re,im,inverse){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]];}
+  }
+  for(let len=2;len<=n;len<<=1){
+    const ang=(inverse?2:-2)*Math.PI/len;
+    const wr=Math.cos(ang),wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cwr=1,cwi=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k],ui=im[i+k];
+        const vr=re[i+k+len/2]*cwr-im[i+k+len/2]*cwi;
+        const vi=re[i+k+len/2]*cwi+im[i+k+len/2]*cwr;
+        re[i+k]=ur+vr;im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr;im[i+k+len/2]=ui-vi;
+        const nwr=cwr*wr-cwi*wi,nwi=cwr*wi+cwi*wr;
+        cwr=nwr;cwi=nwi;
+      }
+    }
+  }
+  if(inverse)for(let i=0;i<n;i++){re[i]/=n;im[i]/=n;}
+}
+function nextPow2(n){let p=1;while(p<n)p<<=1;return p;}
+
+// Regularized lower incomplete gamma P(a,x), via serie/fraction continue (Numerical Recipes)
+function gammap(a,x){
+  if(x<0||a<=0)return 0;
+  if(x===0)return 0;
+  if(x<a+1)return gser(a,x);
+  return 1-gcf(a,x);
+}
+function gser(a,x){
+  const ITMAX=200,EPS=3e-9;
+  let ap=a,sum=1/a,del=sum;
+  for(let n=1;n<=ITMAX;n++){
+    ap+=1;del*=x/ap;sum+=del;
+    if(Math.abs(del)<Math.abs(sum)*EPS)break;
+  }
+  return sum*Math.exp(-x+a*Math.log(x)-lgm(a));
+}
+function gcf(a,x){
+  const ITMAX=200,EPS=3e-9,FPMIN=1e-300;
+  let b=x+1-a,c=1/FPMIN,d=1/b,h=d;
+  for(let i=1;i<=ITMAX;i++){
+    const an=-i*(i-a);
+    b+=2;d=an*d+b;if(Math.abs(d)<FPMIN)d=FPMIN;
+    c=b+an/c;if(Math.abs(c)<FPMIN)c=FPMIN;
+    d=1/d;const del=d*c;h*=del;
+    if(Math.abs(del-1)<EPS)break;
+  }
+  return Math.exp(-x+a*Math.log(x)-lgm(a))*h;
+}
+// Inverse chi-square cdf normalisee (par bisection), equivalent chisquare_inv.m
+function chisquareInv(P,V){
+  let lo=1e-6,hi=1;
+  while(gammap(V/2,hi/2*V)<P)hi*=2;
+  for(let it=0;it<100;it++){
+    const mid=(lo+hi)/2;
+    if(gammap(V/2,mid/2*V)<P)lo=mid;else hi=mid;
+  }
+  return (lo+hi)/2*V;
+}
+function lag1Autocorr(x){
+  const n=x.length,m=x.reduce((a,b)=>a+b,0)/n;
+  let num=0,den=0;
+  for(let i=0;i<n-1;i++)num+=(x[i]-m)*(x[i+1]-m);
+  for(let i=0;i<n;i++)den+=(x[i]-m)**2;
+  const a=den>0?num/den:0;
+  return Math.max(0,Math.min(a,0.99));
+}
+// wavelet.m equivalent (Morlet uniquement, k0=6)
+function waveletCWT(Y,dt,dj,s0,J1){
+  const n1=Y.length,mean=Y.reduce((a,b)=>a+b,0)/n1;
+  const n=nextPow2(n1);
+  const xr=new Float64Array(n),xi=new Float64Array(n);
+  for(let i=0;i<n1;i++)xr[i]=Y[i]-mean;
+  fftRadix2(xr,xi,false); // f = fft(x), reutilise en place
+  const k=new Float64Array(n);
+  const half=Math.floor(n/2);
+  for(let j=1;j<=half;j++)k[j]=j*(2*Math.PI/(n*dt));
+  for(let j=half+1;j<n;j++)k[j]=-(n-j)*(2*Math.PI/(n*dt));
+  const k0=6;
+  const nScales=J1+1;
+  const scale=new Array(nScales),period=new Array(nScales);
+  const waveRe=[],waveIm=[];
+  let fourier_factor=0,coi0=0;
+  for(let a=0;a<nScales;a++){
+    const sc=s0*Math.pow(2,a*dj);scale[a]=sc;
+    // daughter Morlet (reelle)
+    const dRe=new Float64Array(n),dIm=new Float64Array(n);
+    for(let j=0;j<n;j++){
+      if(k[j]>0){
+        const expnt=-((sc*k[j]-k0)**2)/2;
+        const norm=Math.sqrt(sc*k[1])*Math.pow(Math.PI,-0.25)*Math.sqrt(n);
+        dRe[j]=norm*Math.exp(expnt);
+      }
+    }
+    fourier_factor=(4*Math.PI)/(k0+Math.sqrt(2+k0*k0));
+    coi0=fourier_factor/Math.sqrt(2);
+    // produit f.*daughter (complexe), f=(xr,xi) reste inchange car reutilise a chaque scale
+    const pr=new Float64Array(n),pi=new Float64Array(n);
+    for(let j=0;j<n;j++){pr[j]=xr[j]*dRe[j]-xi[j]*dIm[j];pi[j]=xr[j]*dIm[j]+xi[j]*dRe[j];}
+    fftRadix2(pr,pi,true); // ifft
+    waveRe.push(Array.from(pr.slice(0,n1)));
+    waveIm.push(Array.from(pi.slice(0,n1)));
+    period[a]=fourier_factor*sc;
+  }
+  const coi=new Array(n1);
+  for(let i=0;i<n1;i++){
+    const tri=Math.min(i+1,n1-i);
+    coi[i]=Math.max(coi0*dt*tri,1e-5);
+  }
+  return{waveRe,waveIm,scale,period,coi,fourier_factor};
+}
+// wave_signif.m — sigtest 0 (local) ou 1 (moyenne temporelle, GWS), Morlet k0=6 uniquement
+function waveSignif(Y,dt,scale,sigtest,lag1,siglvl,N){
+  const variance=(()=>{const n=Y.length,m=Y.reduce((a,b)=>a+b,0)/n;return Y.reduce((a,b)=>a+(b-m)**2,0)/(n-1);})();
+  const k0=6,fourier_factor=(4*Math.PI)/(k0+Math.sqrt(2+k0*k0));
+  const dofmin=2,gamma_fac=2.32;
+  const period=scale.map(s=>s*fourier_factor);
+  const fftTheor=period.map(p=>{
+    const freq=dt/p;
+    return variance*(1-lag1*lag1)/(1-2*lag1*Math.cos(freq*2*Math.PI)+lag1*lag1);
+  });
+  if(sigtest===0){
+    const chisq=chisquareInv(siglvl,dofmin)/dofmin;
+    return fftTheor.map(f=>f*chisq);
+  }
+  // sigtest 1 : dof variable par echelle (Eqn 23)
+  return scale.map((s,a)=>{
+    const dof=Math.max(dofmin*Math.sqrt(1+((N*dt/gamma_fac)/s)**2),dofmin);
+    const chisq=chisquareInv(siglvl,dof)/dof;
+    return fftTheor[a]*chisq;
+  });
+}
+// Calcule scalogramme + GWS pour une serie (standardisee au prealable par l'appelant)
+function computeCWT(signal){
+  const n=signal.length,dt=1,dj=0.25,s0=2*dt,j1=Math.round(6/dj);
+  const{waveRe,waveIm,scale,period,coi}=waveletCWT(signal,dt,dj,s0,j1);
+  const power=waveRe.map((row,a)=>row.map((v,t)=>v*v+waveIm[a][t]*waveIm[a][t]));
+  const lag1=lag1Autocorr(signal);
+  const signifLocal=waveSignif(signal,dt,scale,0,lag1,0.95,n); // par echelle
+  const sig95=power.map((row,a)=>row.map(p=>p/signifLocal[a]));
+  const gws=power.map(row=>row.reduce((a,b)=>a+b,0)/row.length);
+  const signifGWS=waveSignif(signal,dt,scale,1,lag1,0.95,n);
+  return{scale,period,coi,power,sig95,gws,signifGWS,lag1};
+}
+
+
 function xlsMeta(){
   return[
     ["Logiciel","HydroClim Analyzer"],
@@ -390,7 +631,6 @@ function xls(sheets,fname){
   const wb=XLSX.utils.book_new();
   sheets.forEach(s=>{
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s.data),s.name);
-    // Ajouter stats si données tabulaires
     if(s.addStats&&s.rawData){
       try{
         const statsData=xlsStats(s.rawData);
@@ -398,7 +638,6 @@ function xls(sheets,fname){
       }catch(e){}
     }
   });
-  // Toujours ajouter feuille métadonnées
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(xlsMeta()),"Metadonnees");
   XLSX.writeFile(wb,fname);
 }
@@ -414,12 +653,6 @@ function lire(file,cb){
     }catch(err){alert("Erreur: "+err.message);}
   };
   r.readAsBinaryString(file);
-}
-function heatColor(rho,pval){
-  if(rho===null)return"#1a2f42";
-  const sig=pval!==null&&pval<0.05,a=Math.abs(rho);
-  if(rho>0)return sig?`rgb(0,${100+Math.round(a*180)},${140+Math.round(a*60)})`: `rgba(78,203,160,${0.1+a*0.4})`;
-  return sig?`rgb(${150+Math.round(a*100)},40,40)`:`rgba(224,96,96,${0.1+a*0.4})`;
 }
 
 // ---- HELPER HTML ----
@@ -484,7 +717,7 @@ function sDashboard(){
   const items=[
     {sc:"import",t:"Import des donnees",d:"Charger les 4 fichiers Excel",b:"NEW",c:"bg"},
     {sc:"etccdi",t:"Calcul ETCCDI",d:"16 indices automatiques",b:"CALC",c:"bo"},
-    {sc:"debits",t:"Percentiles des debits",d:"Q5 Q10 Q50 Q90 Q95 annuels",b:"Q",c:"bb"},
+    {sc:"debits",t:"Percentiles des debits",d:"Q5, Q10, Q50, Q90, Q95 annuels",b:"Q",c:"bb"},
     {sc:"spearman",t:"Analyse Spearman",d:"Fusion + Correlation + Heatmap",b:"OS1",c:"bp"},
     {sc:"os2",t:"Variabilite CWT",d:"Scalogrammes en ondelettes",b:"OS2",c:"bg"},
     {sc:"os3",t:"Relations de phase",d:"XWT + WTC + Coherence",b:"OS3",c:"bb"},
@@ -522,7 +755,7 @@ function sETCCDI(){
   }
   if(r&&r.temp){
     const st=Object.keys(r.temp)[0],d=r.temp[st];
-    preview+=`<div class="card"><div class="card-title">Temperatures — ${st}</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${d.annees.slice(0,5).map((an,i)=>`<tr><td class="hlo">${an}</td>${["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"].map(k=>`<td>${d[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+    preview+=`<div class="card"><div class="card-title">Temperatures — ${st}</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI","DTR"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${d.annees.slice(0,5).map((an,i)=>`<tr><td class="hlo">${an}</td>${["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI","DTR"].map(k=>`<td>${d[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
   }
   return`${hdr("Calcul ETCCDI","16 indices automatiques",true)}<div class="content"><div class="card"><div class="card-title">Donnees disponibles</div>${[["precip","Precipitations (25 stations)"],["tmax","Tmax (4 stations)"],["tmin","Tmin (4 stations)"]].map(([k,l])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;margin-bottom:6px;"><span style="font-size:12px;color:#8ab5a5;">${l}</span><span style="font-weight:700;font-size:11px;color:${S.importData[k]?"#4ecba0":"#e06060"};">${S.importData[k]?"Charge":"Manquant"}</span></div>`).join("")}</div>${S.etccdiStatus?`<div class="alert ${S.etccdiStatus.includes("succes")?"alert-success":S.etccdiStatus.includes("Erreur")?"alert-error":"alert-info"}">${S.etccdiStatus}</div>`:""}<button class="btn-primary" onclick="runETCCDI()">Lancer le calcul des 16 indices</button>${preview}${r?'<button class="btn-secondary" onclick="expETCCDI()">Exporter les indices (Excel)</button>':""}</div>${drw()}`;
 }
@@ -532,16 +765,15 @@ function sDebits(){
   const r=S.debitResults;
   let preview="",stats="";
   if(r){
-    preview=`<div class="card"><div class="card-title">Resultats annuels (m3/s)</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","Q5","Q10","Q50","Q90","Q95","Qmoy"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${r.annees.map((an,i)=>`<tr><td class="hl">${an}</td>${["Q5","Q10","Q50","Q90","Q95","Qmoy"].map(k=>`<td>${r[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
-    stats=`<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${[["Q5","#4a9fe0"],["Q50","#4ecba0"],["Q95","#e06060"],["Qmoy","#e0a060"]].map(([k,c])=>{const v=r[k].filter(x=>x!==null);const m=v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"-";return`<div style="background:#0d2235;padding:10px;border-radius:8px;text-align:center;"><div style="font-size:10px;color:#6a9080;">${k}</div><div style="font-weight:800;color:${c};font-size:18px;">${m}</div><div style="font-size:9px;color:#4a6a5a;">m3/s moy.</div></div>`;}).join("")}</div></div>`;
+    preview=`<div class="card"><div class="card-title">Resultats annuels (m3/s)</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Annee","Q5","Q10","Q50","Q90","Q95"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${r.annees.map((an,i)=>`<tr><td class="hl">${an}</td>${["Q5","Q10","Q50","Q90","Q95"].map(k=>`<td>${r[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+    stats=`<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">${[["Q5","#4a9fe0"],["Q50","#4ecba0"],["Q95","#e06060"]].map(([k,c])=>{const v=r[k].filter(x=>x!==null);const m=v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"-";return`<div style="background:#0d2235;padding:10px;border-radius:8px;text-align:center;"><div style="font-size:10px;color:#6a9080;">${k}</div><div style="font-weight:800;color:${c};font-size:18px;">${m}</div><div style="font-size:9px;color:#4a6a5a;">m3/s moy.</div></div>`;}).join("")}</div></div>`;
   }
-  return`${hdr("Percentiles des debits","Q5 Q10 Q50 Q90 Q95 annuels",true)}<div class="content"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;"><span style="font-size:12px;color:#8ab5a5;">Debits journaliers (Bonou)</span><span style="font-weight:700;font-size:11px;color:${S.importData.debit?"#4ecba0":"#e06060"};">${S.importData.debit?"Charge":"Manquant"}</span></div></div>${!r?'<div class="alert alert-info">Chargez le fichier debits dans Import.</div>':""}${preview}${stats}${r?'<button class="btn-secondary" onclick="expDebits()">Exporter les percentiles (Excel)</button>':""}</div>${drw()}`;
+  return`${hdr("Percentiles des debits","Q5, Q10, Q50, Q90, Q95 annuels",true)}<div class="content"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;"><span style="font-size:12px;color:#8ab5a5;">Debits journaliers (Bonou)</span><span style="font-weight:700;font-size:11px;color:${S.importData.debit?"#4ecba0":"#e06060"};">${S.importData.debit?"Charge":"Manquant"}</span></div></div>${!r?'<div class="alert alert-info">Chargez le fichier debits dans Import.</div>':""}${preview}${stats}${r?'<button class="btn-secondary" onclick="expDebits()">Exporter les percentiles (Excel)</button>':""}</div>${drw()}`;
 }
 
 function sSpearman(){
   const r=S.spearmanResults;
   const hasData = !!(S.etccdiResults && S.debitResults);
-  const hasBase = !!(S.baseDirecte);
 
   const qSel=(q,grp)=>{
     const colors={etiage:"#4a9fe0",crue:"#e06060"};
@@ -553,14 +785,16 @@ function sSpearman(){
 
   let heatHtml="";
   if(r){
-    const{mat,debits,indices}=r;
+    const{mat,debits,indicesAll,sigIndices,multicol,indicesFinal}=r;
     const sig=[];
-    indices.forEach(idx=>debits.forEach(d=>{const c=mat[idx]&&mat[idx][d];if(c&&c.pval!==null&&c.pval<0.05)sig.push({idx,d,rho:c.rho,pval:c.pval});}));
+    indicesAll.forEach(idx=>debits.forEach(d=>{const c=mat[idx]&&mat[idx][d];if(c&&c.pval!==null&&c.pval<0.05)sig.push({idx,d,rho:c.rho,pval:c.pval});}));
     sig.sort((a,b)=>Math.abs(b.rho)-Math.abs(a.rho));
     const grps=[{l:"Precipitations",li:["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"]},{l:"Temperatures",li:["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"]}];
-    heatHtml=`<div class="card"><div class="card-title">Heatmap Spearman</div><div class="card-sub">* p &lt; 0.05 · ${sig.length} paires significatives</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;min-width:100%;"><thead><tr><th style="padding:4px 8px;color:#6a9080;text-align:left;border-bottom:1px solid #234055;">Indice</th>${debits.map(d=>`<th style="padding:4px 10px;color:#4ecba0;text-align:center;border-bottom:1px solid #234055;">${d}</th>`).join("")}</tr></thead><tbody>`;
+
+    // 1) HEATMAP complète (indices <-> debits)
+    heatHtml+=`<div class="card"><div class="card-title">Heatmap Spearman</div><div class="card-sub">* p &lt; 0.05 · ${sig.length} paires significatives</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;min-width:100%;"><thead><tr><th style="padding:4px 8px;color:#6a9080;text-align:left;border-bottom:1px solid #234055;">Indice</th>${debits.map(d=>`<th style="padding:4px 10px;color:#4ecba0;text-align:center;border-bottom:1px solid #234055;">${d}</th>`).join("")}</tr></thead><tbody>`;
     grps.forEach(grp=>{
-      const list=grp.li.filter(i=>indices.includes(i));
+      const list=grp.li.filter(i=>indicesAll.includes(i));
       if(!list.length)return;
       heatHtml+=`<tr><td colspan="${debits.length+1}" style="padding:4px 8px;font-size:10px;font-weight:700;color:#5a7a6a;text-transform:uppercase;background:#0d1b2a;">${grp.l}</td></tr>`;
       list.forEach(idx=>{
@@ -576,6 +810,8 @@ function sSpearman(){
       });
     });
     heatHtml+=`</tbody></table></div></div>`;
+
+    // 2) Paires significatives
     if(sig.length){
       heatHtml+=`<div class="card"><div class="card-title">Paires significatives (${sig.length})</div>`;
       sig.forEach(p=>{
@@ -584,11 +820,34 @@ function sSpearman(){
       });
       heatHtml+=`</div>`;
     }
+
+    // 3) Multicolinéarité, uniquement sur les indices significatifs, separement precip / temp
+    const mcCard=(label,mc)=>{
+      let h=`<div class="card"><div class="card-title">Multicolinearite — ${label}</div><div class="card-sub">Indices significatifs uniquement · seuil |rho| &gt;= 0.95</div>`;
+      if(!mc.all.length){
+        h+=`<div class="alert alert-info" style="margin-top:0;">Aucun indice ${label.toLowerCase()} significatif avec les debits.</div>`;
+      } else {
+        const exList=Object.keys(mc.excluded);
+        if(exList.length){
+          exList.forEach(idx=>{
+            const e=mc.excluded[idx];
+            h+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;margin-bottom:5px;"><span style="font-size:12px;color:#e06060;font-weight:600;">${idx} — exclu</span><div style="text-align:right;"><div style="font-size:11px;color:#8ab5a5;">corr. avec ${e.with} (rho=${e.rho.toFixed(3)})</div><div style="font-size:10px;color:#4a6a5a;">|rho debits|: ${idx}=${e.loserScore.toFixed(3)} vs ${e.with}=${e.winnerScore.toFixed(3)} (conserve)</div></div></div>`;
+          });
+        } else {
+          h+=`<div class="alert alert-success" style="margin-top:0;">Aucune paire &gt;= 0.95 — tous conserves.</div>`;
+        }
+        h+=`<div style="margin-top:8px;padding:8px;background:#0d2235;border-radius:8px;font-size:11px;color:#8ab5a5;">Retenus : <strong style="color:#4ecba0;">${mc.retained.join(", ")||"-"}</strong></div>`;
+      }
+      h+=`</div>`;
+      return h;
+    };
+    heatHtml+=mcCard("Precipitations",multicol.precip);
+    heatHtml+=mcCard("Temperatures",multicol.temp);
+
+    heatHtml+=`<div class="card"><div class="card-title">Indices retenus (finaux)</div><div class="card-sub">Significatifs + multicolinearite filtree</div><div style="font-size:12px;color:#e8f4f0;line-height:1.8;">${indicesFinal.length?indicesFinal.join(", "):"Aucun indice retenu."}</div></div>`;
   }
 
   return`${hdr("Analyse Spearman","Correlation + Heatmap",true)}<div class="content">
-
-    <!-- SOURCE DES DONNÉES -->
     <div class="card">
       <div class="card-title">Source des donnees</div>
       <div style="display:flex;flex-direction:column;gap:6px;">
@@ -604,19 +863,12 @@ function sSpearman(){
       ${!hasData?`<div class="alert alert-info" style="margin-top:8px;">Calculez d abord les indices ETCCDI et les percentiles de debits.</div>`:""}
     </div>
 
-    <!-- OU : fichier externe -->
     <div class="card">
-      <div class="card-title">Ou charger un fichier fusionne</div>
-      <div class="card-sub">Format: Annee | Q5 | Q50 | Q95 | PRCPTOT | ... | CSDI</div>
-      <div class="uz ${S.baseDirecte?"loaded":""}">
-        <input type="file" id="fbase" accept=".xlsx,.xls,.csv"/>
-        <div class="ui">${S.baseDirecte?"OK":"📂"}</div>
-        <div class="ul">${S.baseDirecteFile||"Cliquer pour uploader"}</div>
-        <div class="uh">${S.baseDirecte?S.baseDirecte.length+" lignes":"Formats: .xlsx .xls .csv"}</div>
-      </div>
+      <div class="card-title">Base fusionnee (automatique)</div>
+      <div class="card-sub">Annee | Q5 Q10 Q50 Q90 Q95 | indices precip (moy. 25 stations) | indices temp (moy. 4 stations)</div>
+      ${hasData?`<div class="alert alert-success">Base prete — ${(S.debitResults?.annees||[]).length} annees fusionnees.</div><button class="btn-secondary" onclick="expFusion()">Exporter la base fusionnee (Excel)</button>`:`<div class="alert alert-info">En attente des indices ETCCDI et des percentiles de debits.</div>`}
     </div>
 
-    <!-- CHOIX Q -->
     <div class="card">
       <div class="card-title">Choix des indicateurs</div>
       <div style="margin-bottom:10px;">
@@ -638,9 +890,195 @@ function sSpearman(){
   </div>${drw()}`;
 }
 
-
-function sOS2(){return`${hdr("Variabilite CWT","Scalogrammes en ondelettes",true)}<div class="content"><div class="card"><div class="card-title">OS2 — En developpement</div><div class="ib">Les scalogrammes seront calcules automatiquement depuis les donnees importees.</div></div></div>${drw()}`;}
-function sOS3(){return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content"><div class="card"><div class="card-title">OS3 — En developpement</div><div class="ib">Les 9 paires significatives seront calculees automatiquement.</div></div></div>${drw()}`;}
+function runCWTAll(){
+  const base=fusionnerBase();
+  if(!base||base.length<8){alert("Base fusionnee insuffisante (min. 8 annees) pour la CWT.");return;}
+  setState({cwtStatus:"Calcul en cours..."});
+  setTimeout(()=>{
+    try{
+      const availCols=Object.keys(base[0]);
+      // Liste fixe (script MATLAB) : debits + indices significatifs retenus
+      const wanted=["Q5","Q50","Q95","PRCPTOT","RX1day","Rx5day","CDD","TR20","CSDI"];
+      const cols=wanted.map(w=>availCols.find(c=>c.toLowerCase()===w.toLowerCase())).filter(Boolean);
+      if(!cols.length){alert("Aucune des variables attendues (Q5,Q50,Q95,PRCPTOT,RX1day,Rx5day,CDD,TR20,CSDI) n a ete trouvee dans la base fusionnee.");setState({cwtStatus:""});return;}
+      const t=base.map(r=>r.Annee);
+      const out={};
+      cols.forEach(c=>{
+        const raw=base.map(r=>parseNum(r[c])).map(v=>v===null?0:v);
+        const n=raw.length,m=raw.reduce((a,b)=>a+b,0)/n;
+        const sd=Math.sqrt(raw.reduce((a,b)=>a+(b-m)**2,0)/(n-1))||1; // ecart-type d echantillon (zscore MATLAB)
+        const z=raw.map(v=>(v-m)/sd);
+        out[c]=computeCWT(z);
+      });
+      setState({cwtResults:{t,vars:out},cwtStatus:"Calcul termine avec succes"});
+    }catch(err){setState({cwtStatus:"Erreur: "+err.message});}
+  },50);
+}
+const CWT_COLORMAP=(()=>{ // approx colormap jet
+  const stops=[[0,0,131],[0,60,170],[5,255,255],[255,255,0],[250,0,0],[128,0,0]];
+  return v=>{
+    v=Math.max(0,Math.min(1,v));
+    const p=v*(stops.length-1),i=Math.floor(p),f=p-i,a=stops[i],b=stops[Math.min(i+1,stops.length-1)];
+    return[Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)];
+  };
+})();
+// Restreint l affichage a la plage de periodes 2-16 ans (comme idx_period dans le script MATLAB)
+function restrictCWT(res){
+  const idx=res.period.map((p,i)=>i).filter(i=>res.period[i]>=2&&res.period[i]<=16);
+  return{
+    period:idx.map(i=>res.period[i]),
+    power:idx.map(i=>res.power[i]),
+    sig95:idx.map(i=>res.sig95[i]),
+    gws:idx.map(i=>res.gws[i]),
+    signifGWS:idx.map(i=>res.signifGWS[i]),
+    coi:res.coi,
+    lag1:res.lag1,
+  };
+}
+function downloadCWTImage(canvasId,varName){
+  const cvs=document.getElementById(canvasId);
+  if(!cvs){alert("Graphique non disponible.");return;}
+  const link=document.createElement("a");
+  link.download="Scalogramme_"+varName+".png";
+  link.href=cvs.toDataURL("image/png");
+  link.click();
+}
+function drawCWTCard(canvasId,r,t){
+  const cvs=document.getElementById(canvasId);
+  if(!cvs)return;
+  const ctx=cvs.getContext("2d");
+  const W=cvs.width,H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+  const nT=t.length,nS=r.period.length;
+  const periodLog=r.period.map(p=>Math.log2(p));
+  const pMin=Math.min(...periodLog),pMax=Math.max(...periodLog);
+  const maxPow=Math.max(...r.power.flat());
+  const img=ctx.createImageData(W,H);
+  for(let py=0;py<H;py++){
+    const plog=pMin+(py/(H-1))*(pMax-pMin); // haut=periode courte
+    // position continue dans l echelle des periodes (log2), pour interpolation bilineaire
+    let a0=0;while(a0<nS-2&&periodLog[a0+1]<plog)a0++;
+    const a1=Math.min(a0+1,nS-1);
+    const span=periodLog[a1]-periodLog[a0];
+    const fa=span>0?Math.max(0,Math.min(1,(plog-periodLog[a0])/span)):0;
+    for(let px=0;px<W;px++){
+      const tiCont=(px/(W-1))*(nT-1);
+      const t0=Math.floor(tiCont),t1=Math.min(t0+1,nT-1),ft=tiCont-t0;
+      const v00=r.power[a0][t0],v01=r.power[a0][t1],v10=r.power[a1][t0],v11=r.power[a1][t1];
+      const vTop=v00+(v01-v00)*ft,vBot=v10+(v11-v10)*ft;
+      const val=(vTop+(vBot-vTop)*fa)/(maxPow||1);
+      const[cr,cg,cb]=CWT_COLORMAP(val);
+      const idx=(py*W+px)*4;
+      img.data[idx]=cr;img.data[idx+1]=cg;img.data[idx+2]=cb;img.data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  // COI (zone non fiable) : voile blanc semi-transparent
+  ctx.save();ctx.globalAlpha=0.45;ctx.fillStyle="#0d1b2a";
+  ctx.beginPath();
+  for(let px=0;px<W;px++){
+    const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
+    const coiLog=Math.log2(Math.min(r.coi[ti],r.period[nS-1]));
+    const py=Math.max(0,((coiLog-pMin)/(pMax-pMin))*(H-1));
+    if(px===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+  }
+  ctx.lineTo(W,0);ctx.lineTo(0,0);ctx.closePath();ctx.fill();ctx.restore();
+  // Contour de significativite (bord des cellules ou sig95>=1)
+  ctx.save();ctx.strokeStyle="#111";ctx.lineWidth=1.3;ctx.beginPath();
+  for(let py=0;py<H;py++){
+    const plog=pMin+(py/(H-1))*(pMax-pMin);
+    let a=0;while(a<nS-1&&periodLog[a+1]<plog)a++;
+    let prevSig=null;
+    for(let px=0;px<W;px++){
+      const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
+      const sig=r.sig95[a][ti]>=1;
+      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(px,py);ctx.lineTo(px,py+1);}
+      prevSig=sig;
+    }
+  }
+  ctx.stroke();ctx.restore();
+  // Axes periode (repere textuel) deja affiches en HTML a cote
+}
+function drawAllCWT(){
+  if(!S.cwtResults||S.screen!=="os2")return;
+  const{t,vars}=S.cwtResults;
+  Object.keys(vars).forEach(v=>drawCWTCard("cwt-"+v,vars[v],t));
+  if(S.cwtZoom&&vars[S.cwtZoom])drawCWTCard("cwtz-"+S.cwtZoom,vars[S.cwtZoom],t);
+}
+function sOS2(){
+  const r=S.cwtResults;
+  const hasBase=!!(S.etccdiResults&&S.debitResults);
+  let body="";
+  if(!hasBase){
+    body=`<div class="alert alert-info">Calculez d abord les indices ETCCDI et les percentiles de debits (la base fusionnee alimente la CWT).</div>`;
+  } else {
+    body=`<div class="card"><div class="card-title">Scalogrammes CWT (Morlet) + GWS</div><div class="card-sub">Variables : Q5, Q50, Q95, PRCPTOT, RX1day, Rx5day, CDD, TR20, CSDI · standardisation z-score (ecart-type d echantillon, n-1) · un graphique par variable</div><button class="btn-primary" onclick="runCWTAll()" ${S.cwtStatus==="Calcul en cours..."?"disabled":""}>${S.cwtStatus==="Calcul en cours..."?"Calcul...":"Calculer les scalogrammes"}</button>${S.cwtStatus&&S.cwtStatus!=="Calcul en cours..."?`<div class="alert ${S.cwtStatus.startsWith("Erreur")?"alert-error":"alert-success"}" style="margin-top:8px;">${S.cwtStatus}</div>`:""}</div>`;
+    if(r){
+      const{t,vars}=r;
+      Object.keys(vars).forEach(v=>{
+        const res=vars[v];
+        const periodTicks=[2,4,8,16].filter(p=>p>=Math.min(...res.period)&&p<=Math.max(...res.period));
+        const pMin=Math.log2(Math.min(...res.period)),pMax=Math.log2(Math.max(...res.period));
+        const maxGws=Math.max(...res.gws,...res.signifGWS);
+        // mini GWS en SVG (courbe puissance vs periode, log2 en Y comme le scalogramme)
+        const gwsPts=res.gws.map((g,i)=>{const y=((Math.log2(res.period[i])-pMin)/(pMax-pMin))*100;const x=(g/maxGws)*100;return`${x},${y}`;}).join(" ");
+        const sigPts=res.signifGWS.map((g,i)=>{const y=((Math.log2(res.period[i])-pMin)/(pMax-pMin))*100;const x=(g/maxGws)*100;return`${x},${y}`;}).join(" ");
+        body+=`<div class="card">
+          <div class="card-title">${v}</div>
+          <div class="card-sub">alpha (lag-1) = ${res.lag1.toFixed(3)} · seuil 95% chi2 · <span style="color:#4ecba0;">🔍 cliquer sur le graphique pour agrandir</span></div>
+          <div style="display:flex;gap:8px;align-items:stretch;cursor:zoom-in;" onclick="setState({cwtZoom:'${v}'})">
+            <div style="position:relative;flex:3;">
+              <canvas id="cwt-${v}" width="900" height="450" style="width:100%;border-radius:6px;display:block;"></canvas>
+              <div style="display:flex;justify-content:space-between;font-size:9px;color:#6a9080;margin-top:2px;"><span>${t[0]}</span><span>Temps</span><span>${t[t.length-1]}</span></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;">
+              <div style="font-size:9px;color:#6a9080;text-align:center;margin-bottom:2px;">GWS</div>
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:150px;background:#0d2235;border-radius:6px;">
+                <polyline points="${gwsPts}" fill="none" stroke="#4a9fe0" stroke-width="1.5"/>
+                <polyline points="${sigPts}" fill="none" stroke="#e06060" stroke-width="1" stroke-dasharray="3,2"/>
+              </svg>
+            </div>
+          </div>
+          <div style="font-size:9px;color:#4a6a5a;margin-top:4px;">Periodes (ans) axe Y : ${periodTicks.join(" · ")} — zone grisee = cone d influence (COI) · contour noir = significatif p&lt;0.05</div>
+        </div>`;
+      });
+    }
+  }
+  const zoomOverlay=(()=>{
+    if(!S.cwtZoom||!r||!r.vars[S.cwtZoom])return"";
+    const v=S.cwtZoom,res=r.vars[v],t=r.t;
+    const periodTicks=[2,4,8,16].filter(p=>p>=Math.min(...res.period)&&p<=Math.max(...res.period));
+    const pMin=Math.log2(Math.min(...res.period)),pMax=Math.log2(Math.max(...res.period));
+    const maxGws=Math.max(...res.gws,...res.signifGWS);
+    const gwsPts=res.gws.map((g,i)=>{const y=((Math.log2(res.period[i])-pMin)/(pMax-pMin))*100;const x=(g/maxGws)*100;return`${x},${y}`;}).join(" ");
+    const sigPts=res.signifGWS.map((g,i)=>{const y=((Math.log2(res.period[i])-pMin)/(pMax-pMin))*100;const x=(g/maxGws)*100;return`${x},${y}`;}).join(" ");
+    return`<div style="position:fixed;inset:0;background:rgba(3,8,14,.92);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="setState({cwtZoom:null})">
+      <div style="background:#0f2030;border:1px solid #234055;border-radius:14px;padding:16px;max-width:96vw;max-height:92vh;overflow:auto;" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:16px;font-weight:800;color:#fff;">${v} — vue agrandie</div>
+          <button class="back-btn" onclick="setState({cwtZoom:null})">✕ fermer</button>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;">
+          <div style="flex:3;min-width:280px;">
+            <canvas id="cwtz-${v}" width="1200" height="600" style="width:100%;border-radius:8px;display:block;"></canvas>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ab5a5;margin-top:4px;"><span>${t[0]}</span><span>Temps</span><span>${t[t.length-1]}</span></div>
+            <div style="font-size:11px;color:#6a9080;margin-top:6px;">Periodes (ans) : ${periodTicks.join(" · ")} — zone grisee = COI · contour noir = p&lt;0.05</div>
+          </div>
+          <div style="flex:1;min-width:180px;display:flex;flex-direction:column;">
+            <div style="font-size:12px;color:#8ab5a5;text-align:center;margin-bottom:4px;">GWS (Global Wavelet Spectrum)</div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:400px;background:#0d2235;border-radius:8px;">
+              <polyline points="${gwsPts}" fill="none" stroke="#4a9fe0" stroke-width="1"/>
+              <polyline points="${sigPts}" fill="none" stroke="#e06060" stroke-width="0.7" stroke-dasharray="2,1.5"/>
+            </svg>
+            <div style="font-size:10px;color:#6a9080;margin-top:6px;">bleu = puissance · rouge pointille = seuil 95%</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  })();
+  return`${hdr("Variabilite CWT","Scalogrammes en ondelettes",true)}<div class="content">${body}</div>${zoomOverlay}${drw()}`;
+}
+function sOS3(){return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content"><div class="card"><div class="card-title">OS3 — En developpement</div><div class="ib">Les paires significatives seront calculees automatiquement.</div></div></div>${drw()}`;}
 function sAlertes(){
   const r=S.debitResults;
   let body='<div class="alert alert-info">Calculez les percentiles de debits pour voir les alertes.</div>';
@@ -698,12 +1136,11 @@ function expETCCDI(){
 }
 function expDebits(){
   const r=S.debitResults;if(!r)return;
-  const rows=[["Annee","Q5","Q10","Q50","Q90","Q95","Qmoy","Qmin","Qmax"]];
-  r.annees.forEach((an,i)=>rows.push([an,r.Q5[i],r.Q10[i],r.Q50[i],r.Q90[i],r.Q95[i],r.Qmoy[i],r.Qmin[i],r.Qmax[i]]));
+  const rows=[["Annee","Q5","Q10","Q50","Q90","Q95"]];
+  r.annees.forEach((an,i)=>rows.push([an,r.Q5[i],r.Q10[i],r.Q50[i],r.Q90[i],r.Q95[i]]));
   xls([{name:"Percentiles",data:rows}],"Percentiles_Debits.xlsx");
 }
 function fusionnerBase(){
-  // Construire la base depuis les résultats calculés
   const debitR = S.debitResults;
   const precipR = S.etccdiResults && S.etccdiResults.precip;
   const tempR   = S.etccdiResults && S.etccdiResults.temp;
@@ -711,7 +1148,6 @@ function fusionnerBase(){
   const yrs = debitR.annees;
   const indP=["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"];
   const indT=["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"];
-  // Moyennes par annee
   function moy(res,inds){
     if(!res)return null;
     const sts=Object.keys(res);
@@ -720,7 +1156,7 @@ function fusionnerBase(){
       out[an]={};
       inds.forEach(idx=>{
         const vals=sts.map(st=>res[st][idx]?res[st][idx][i]:null).filter(v=>v!==null&&!isNaN(v));
-        out[an][idx]=vals.length>0?+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(4):null;
+        out[an][idx]=vals.length>0?(vals.reduce((a,b)=>a+b,0)/vals.length):null;
       });
     });
     return out;
@@ -735,28 +1171,26 @@ function fusionnerBase(){
     return row;
   });
 }
+function expFusion(){
+  const base=fusionnerBase();
+  if(!base||!base.length){alert("Calculez d abord les indices ETCCDI et les percentiles de debits.");return;}
+  const cols=Object.keys(base[0]);
+  const rows=[cols,...base.map(r=>cols.map(c=>r[c]))];
+  xls([{name:"Base_Fusionnee",data:rows,addStats:true,rawData:base}],"Base_Fusionnee.xlsx");
+}
 
 function runSpearman(){
-  // Priorité : données calculées, sinon fichier externe
-  let base = null;
-  let source = "";
-
-  if(S.etccdiResults && S.debitResults){
-    base = fusionnerBase();
-    source = "calcule";
-  } else if(S.baseDirecte && S.baseDirecte.length>=3){
-    base = S.baseDirecte;
-    source = "externe";
-  }
+  const source = "calcule";
+  const base = (S.etccdiResults && S.debitResults) ? fusionnerBase() : null;
 
   if(!base||base.length<3){
-    alert("Calculez d abord les indices ETCCDI et les percentiles de debits, ou chargez un fichier fusionne.");
+    alert("Calculez d abord les indices ETCCDI et les percentiles de debits (au moins 3 annees).");
     return;
   }
 
   const cols=Object.keys(base[0]);
   const ac=cols.find(c=>c.toLowerCase().includes("ann")||c.toLowerCase().includes("year"))||cols[0];
-  const dkws=["q5","q10","q50","q90","q95","qmoy"];
+  const dkws=["q5","q10","q50","q90","q95"];
   let dc=cols.filter(c=>dkws.some(k=>c.toLowerCase().replace(/[^a-z0-9]/g,"")===k));
   if(!dc.length)dc=cols.slice(1,4);
   const chosen=[];
@@ -765,35 +1199,87 @@ function runSpearman(){
     if(m&&!chosen.includes(m))chosen.push(m);
   });
   const final=chosen.length?chosen:dc.slice(0,3);
-  const indCols=cols.filter(c=>c!==ac&&!dc.includes(c));
+  const indColsAll=cols.filter(c=>c!==ac&&!dc.includes(c));
+
+  // ---- ETAPE 1 : Heatmap Spearman indices <-> debits (tous les indices) ----
   const mat={};
-  indCols.forEach(idx=>{
+  indColsAll.forEach(idx=>{
     mat[idx]={};
     const x=base.map(r=>parseNum(r[idx]));
     final.forEach(d=>{mat[idx][d]=spearman(x,base.map(r=>parseNum(r[d])));});
   });
-  setState({spearmanResults:{mat,debits:final,indices:indCols,source}});
+
+  // ---- ETAPE 2 : filtrage des indices significatifs (p < 0.05 avec au moins un debit) ----
+  const sigIndices=indColsAll.filter(idx=>final.some(d=>{
+    const c=mat[idx][d];return c&&c.pval!==null&&c.pval<0.05;
+  }));
+
+  // ---- ETAPE 3 : multicolinearite, separement precip et temp, uniquement sur les indices significatifs ----
+  const grpDefs={
+    precip:["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"],
+    temp:["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"],
+  };
+  const maxAbsRho=idx=>Math.max(...final.map(d=>{const c=mat[idx][d];return c&&c.rho!==null?Math.abs(c.rho):0;}));
+
+  function multicolGroup(list){
+    const excluded={},pairs=[];
+    for(let i=0;i<list.length;i++){
+      for(let j=i+1;j<list.length;j++){
+        const a=list[i],b=list[j];
+        const xa=base.map(r=>parseNum(r[a])),xb=base.map(r=>parseNum(r[b]));
+        const sp=spearman(xa,xb);
+        if(sp.rho!==null&&Math.abs(sp.rho)>=0.95){
+          pairs.push({a,b,rho:sp.rho});
+          if(excluded[a]||excluded[b])continue;
+          const scoreA=maxAbsRho(a),scoreB=maxAbsRho(b);
+          const loser=scoreA>=scoreB?b:a,winner=loser===a?b:a;
+          const loserScore=loser===a?scoreA:scoreB,winnerScore=winner===a?scoreA:scoreB;
+          excluded[loser]={with:winner,rho:sp.rho,loserScore,winnerScore};
+        }
+      }
+    }
+    const retained=list.filter(idx=>!excluded[idx]);
+    return{excluded,pairs,retained,all:list};
+  }
+
+  const sigPrecip=sigIndices.filter(i=>grpDefs.precip.includes(i));
+  const sigTemp=sigIndices.filter(i=>grpDefs.temp.includes(i));
+  const multicol={
+    precip:multicolGroup(sigPrecip),
+    temp:multicolGroup(sigTemp),
+  };
+  const indicesFinal=[...multicol.precip.retained,...multicol.temp.retained];
+
+  setState({spearmanResults:{mat,debits:final,indicesAll:indColsAll,sigIndices,multicol,indicesFinal,source}});
 }
 function expSpearman(){
   const r=S.spearmanResults;if(!r)return;
-  const{mat,debits,indices}=r;
+  const{mat,debits,indicesAll,multicol,indicesFinal}=r;
   const rhoRows=[["Indice",...debits]];
   const pRows=[["Indice",...debits]];
-  indices.forEach(idx=>{
+  indicesAll.forEach(idx=>{
     rhoRows.push([idx,...debits.map(d=>mat[idx]&&mat[idx][d]?mat[idx][d].rho:null)]);
     pRows.push([idx,...debits.map(d=>mat[idx]&&mat[idx][d]?mat[idx][d].pval:null)]);
   });
-  xls([{name:"Rho_Spearman",data:rhoRows},{name:"P_values",data:pRows}],"Matrice_Spearman.xlsx");
+  const sheets=[{name:"Rho_Spearman",data:rhoRows},{name:"P_values",data:pRows}];
+  [["Precipitations",multicol.precip],["Temperatures",multicol.temp]].forEach(([label,mc])=>{
+    const exList=Object.keys(mc.excluded||{});
+    if(exList.length){
+      const exRows=[["Indice_exclu","Correle_avec","Rho_entre_indices","RhoMax_exclu_vs_debits","RhoMax_conserve_vs_debits"]];
+      exList.forEach(idx=>{const e=mc.excluded[idx];exRows.push([idx,e.with,e.rho,e.loserScore,e.winnerScore]);});
+      sheets.push({name:"Exclusions_"+label,data:exRows});
+    }
+  });
+  sheets.push({name:"Indices_retenus",data:[["Indice"],...indicesFinal.map(i=>[i])]});
+  xls(sheets,"Matrice_Spearman.xlsx");
 }
 
 // ---- EVENTS ----
 function attachEvents(){
-  // Import tabs
   ["precip","tmax","tmin","debit"].forEach(k=>{
     const el=document.getElementById("itab-"+k);
     if(el)el.onclick=()=>setState({importTab:k});
   });
-  // File import
   const fi=document.getElementById("fimport");
   if(fi)fi.onchange=e=>{
     const f=e.target.files[0];if(!f)return;
@@ -804,7 +1290,6 @@ function attachEvents(){
       setState({importTab:k});
     });
   };
-  // Export buttons
   ["precip","tmax","tmin","debit"].forEach(k=>{
     const el=document.getElementById("ebtn-"+k);
     if(el)el.onclick=()=>{
@@ -815,13 +1300,6 @@ function attachEvents(){
       xls([{name:nm[k],data:exportData,addStats:true,rawData:d}],fn[k]);
     };
   });
-  // File base spearman
-  const fb=document.getElementById("fbase");
-  if(fb)fb.onchange=e=>{
-    const f=e.target.files[0];if(!f)return;
-    lire(f,data=>setState({baseDirecte:data,baseDirecteFile:f.name,spearmanResults:null}));
-  };
-  // Q buttons
   ["Q5","Q10"].forEach(q=>{
     const el=document.getElementById("qbtn-"+q);
     if(el)el.onclick=()=>setState({spearmanQetiage:q});
@@ -842,6 +1320,7 @@ const SCR={
 function render(){
   document.getElementById("app").innerHTML=(SCR[S.screen]||sAccueil)();
   attachEvents();
+  if(S.screen==="os2")setTimeout(drawAllCWT,0);
 }
 render();
 </script>

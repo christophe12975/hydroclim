@@ -1,0 +1,24 @@
+{
+  "name": "hydroclim",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/christophe12975/hydroclim.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/christophe12975/hydroclim/issues"
+  },
+  "homepage": "https://github.com/christophe12975/hydroclim#readme",
+  "devDependencies": {
+    "vite": "^8.2.0"
+  }
+}
