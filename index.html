@@ -361,10 +361,45 @@ function calcMat(base,debits){
 }
 
 // ---- EXPORT ----
+function xlsMeta(){
+  return[
+    ["Logiciel","HydroClim Analyzer"],
+    ["Version","1.0"],
+    ["Auteur","Christophe VODOUNOU"],
+    ["Institution","ENSGMM/UNSTIM Abomey - Benin"],
+    ["Bassin","Oueme a Bonou"],
+    ["Periode","1991-2020"],
+    ["Encadrant","Dr. Iboukoun Eliezer BIAO"],
+    ["Date export",new Date().toLocaleDateString("fr-FR")],
+  ];
+}
+function xlsStats(data){
+  const cols=Object.keys(data[0]).filter(c=>!c.toLowerCase().includes("date")&&c!=="Station"&&c!=="Annee");
+  const rows=[["Variable","Moyenne","Ecart-type","Minimum","Maximum","N valides","Manquants"]];
+  cols.forEach(col=>{
+    const vals=data.map(r=>parseNum(r[col])).filter(v=>v!==null&&!isNaN(v));
+    if(!vals.length)return;
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const std=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length);
+    rows.push([col,+mean.toFixed(4),+std.toFixed(4),+Math.min(...vals).toFixed(4),+Math.max(...vals).toFixed(4),vals.length,data.length-vals.length]);
+  });
+  return rows;
+}
 function xls(sheets,fname){
   if(typeof XLSX==="undefined"){alert("XLSX non disponible.");return;}
   const wb=XLSX.utils.book_new();
-  sheets.forEach(s=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s.data),s.name));
+  sheets.forEach(s=>{
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s.data),s.name);
+    // Ajouter stats si données tabulaires
+    if(s.addStats&&s.rawData){
+      try{
+        const statsData=xlsStats(s.rawData);
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(statsData),"Stats_"+s.name.substring(0,20));
+      }catch(e){}
+    }
+  });
+  // Toujours ajouter feuille métadonnées
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(xlsMeta()),"Metadonnees");
   XLSX.writeFile(wb,fname);
 }
 function lire(file,cb){
@@ -505,11 +540,17 @@ function sDebits(){
 
 function sSpearman(){
   const r=S.spearmanResults;
+  const hasData = !!(S.etccdiResults && S.debitResults);
+  const hasBase = !!(S.baseDirecte);
+
   const qSel=(q,grp)=>{
     const colors={etiage:"#4a9fe0",crue:"#e06060"};
     const cur=grp==="etiage"?S.spearmanQetiage:S.spearmanQcrue;
-    return`<div id="qbtn-${q}" style="flex:1;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:center;border:${cur===q?`1px solid ${colors[grp]}`:"1px solid #234055"};background:${cur===q?`rgba(${grp==="etiage"?"74,159,224":"220,80,80"},.15)`:"#0d2235"};color:${cur===q?colors[grp]:"#6a9080"};">${q}</div>`;
+    const col=colors[grp];
+    const sel=cur===q;
+    return`<div id="qbtn-${q}" style="flex:1;padding:10px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;text-align:center;border:${sel?`1px solid ${col}`:"1px solid #234055"};background:${sel?`rgba(${grp==="etiage"?"74,159,224":"220,80,80"},.15)`:"#0d2235"};color:${sel?col:"#6a9080"};">${q}</div>`;
   };
+
   let heatHtml="";
   if(r){
     const{mat,debits,indices}=r;
@@ -544,8 +585,59 @@ function sSpearman(){
       heatHtml+=`</div>`;
     }
   }
-  return`${hdr("Analyse Spearman","Correlation + Heatmap",true)}<div class="content"><div class="card"><div class="card-title">Charger le fichier fusionne</div><div class="card-sub">Format: Annee | Q5 | Q50 | Q95 | PRCPTOT | ... | CSDI</div><div class="uz ${S.baseDirecte?"loaded":""}"><input type="file" id="fbase" accept=".xlsx,.xls,.csv"/><div class="ui">${S.baseDirecte?"OK":"📂"}</div><div class="ul">${S.baseDirecteFile||"Cliquer pour uploader"}</div><div class="uh">${S.baseDirecte?S.baseDirecte.length+" lignes · "+Object.keys(S.baseDirecte[0]).length+" colonnes":"Formats: .xlsx .xls .csv"}</div></div>${S.baseDirecte?`<div style="font-size:10px;color:#6a9080;padding:6px 8px;background:#0d2235;border-radius:6px;margin-top:8px;word-break:break-all;">${Object.keys(S.baseDirecte[0]).join(" | ")}</div>`:""}</div><div class="card"><div class="card-title">Choix des indicateurs</div><div style="margin-bottom:10px;"><div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur d etiage</div><div style="display:flex;gap:8px;">${["Q5","Q10"].map(q=>qSel(q,"etiage")).join("")}</div></div><div><div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur de crue</div><div style="display:flex;gap:8px;">${["Q90","Q95"].map(q=>qSel(q,"crue")).join("")}</div></div><div style="margin-top:10px;padding:8px;background:#0d2235;border-radius:8px;font-size:11px;color:#8ab5a5;text-align:center;">Debits: <strong style="color:#4ecba0;">${S.spearmanQetiage} · Q50 · ${S.spearmanQcrue}</strong></div></div><button class="btn-primary" onclick="runSpearman()">Calculer la matrice de Spearman</button>${r?'<button class="btn-secondary" onclick="expSpearman()">Exporter la matrice (Excel)</button>':""} ${heatHtml}</div>${drw()}`;
+
+  return`${hdr("Analyse Spearman","Correlation + Heatmap",true)}<div class="content">
+
+    <!-- SOURCE DES DONNÉES -->
+    <div class="card">
+      <div class="card-title">Source des donnees</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;">
+          <span style="font-size:12px;color:#8ab5a5;">Indices ETCCDI calcules</span>
+          <span style="font-weight:700;font-size:11px;color:${S.etccdiResults?"#4ecba0":"#e06060"};">${S.etccdiResults?"Disponible":"Manquant"}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;">
+          <span style="font-size:12px;color:#8ab5a5;">Percentiles debits calcules</span>
+          <span style="font-weight:700;font-size:11px;color:${S.debitResults?"#4ecba0":"#e06060"};">${S.debitResults?"Disponible":"Manquant"}</span>
+        </div>
+      </div>
+      ${!hasData?`<div class="alert alert-info" style="margin-top:8px;">Calculez d abord les indices ETCCDI et les percentiles de debits.</div>`:""}
+    </div>
+
+    <!-- OU : fichier externe -->
+    <div class="card">
+      <div class="card-title">Ou charger un fichier fusionne</div>
+      <div class="card-sub">Format: Annee | Q5 | Q50 | Q95 | PRCPTOT | ... | CSDI</div>
+      <div class="uz ${S.baseDirecte?"loaded":""}">
+        <input type="file" id="fbase" accept=".xlsx,.xls,.csv"/>
+        <div class="ui">${S.baseDirecte?"OK":"📂"}</div>
+        <div class="ul">${S.baseDirecteFile||"Cliquer pour uploader"}</div>
+        <div class="uh">${S.baseDirecte?S.baseDirecte.length+" lignes":"Formats: .xlsx .xls .csv"}</div>
+      </div>
+    </div>
+
+    <!-- CHOIX Q -->
+    <div class="card">
+      <div class="card-title">Choix des indicateurs</div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur d etiage</div>
+        <div style="display:flex;gap:8px;">${["Q5","Q10"].map(q=>qSel(q,"etiage")).join("")}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#8ab5a5;margin-bottom:6px;font-weight:600;">Indicateur de crue</div>
+        <div style="display:flex;gap:8px;">${["Q90","Q95"].map(q=>qSel(q,"crue")).join("")}</div>
+      </div>
+      <div style="margin-top:10px;padding:8px;background:#0d2235;border-radius:8px;font-size:11px;color:#8ab5a5;text-align:center;">
+        Debits: <strong style="color:#4ecba0;">${S.spearmanQetiage} · Q50 · ${S.spearmanQcrue}</strong>
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="runSpearman()">Calculer la matrice de Spearman</button>
+    ${r?`<button class="btn-secondary" onclick="expSpearman()">Exporter la matrice (Excel)</button>`:""}
+    ${heatHtml}
+  </div>${drw()}`;
 }
+
 
 function sOS2(){return`${hdr("Variabilite CWT","Scalogrammes en ondelettes",true)}<div class="content"><div class="card"><div class="card-title">OS2 — En developpement</div><div class="ib">Les scalogrammes seront calcules automatiquement depuis les donnees importees.</div></div></div>${drw()}`;}
 function sOS3(){return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content"><div class="card"><div class="card-title">OS3 — En developpement</div><div class="ib">Les 9 paires significatives seront calculees automatiquement.</div></div></div>${drw()}`;}
@@ -610,9 +702,58 @@ function expDebits(){
   r.annees.forEach((an,i)=>rows.push([an,r.Q5[i],r.Q10[i],r.Q50[i],r.Q90[i],r.Q95[i],r.Qmoy[i],r.Qmin[i],r.Qmax[i]]));
   xls([{name:"Percentiles",data:rows}],"Percentiles_Debits.xlsx");
 }
+function fusionnerBase(){
+  // Construire la base depuis les résultats calculés
+  const debitR = S.debitResults;
+  const precipR = S.etccdiResults && S.etccdiResults.precip;
+  const tempR   = S.etccdiResults && S.etccdiResults.temp;
+  if(!debitR) return null;
+  const yrs = debitR.annees;
+  const indP=["PRCPTOT","RX1day","Rx5day","R10","R20","SDII","CDD","CWD"];
+  const indT=["SU25","TR20","TN10p","TX10p","TN90p","TX90p","WSDI","CSDI"];
+  // Moyennes par annee
+  function moy(res,inds){
+    if(!res)return null;
+    const sts=Object.keys(res);
+    const out={};
+    yrs.forEach((an,i)=>{
+      out[an]={};
+      inds.forEach(idx=>{
+        const vals=sts.map(st=>res[st][idx]?res[st][idx][i]:null).filter(v=>v!==null&&!isNaN(v));
+        out[an][idx]=vals.length>0?+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(4):null;
+      });
+    });
+    return out;
+  }
+  const mP=moy(precipR,indP);
+  const mT=moy(tempR,indT);
+  return yrs.map((an,i)=>{
+    const row={Annee:an};
+    ["Q5","Q10","Q50","Q90","Q95"].forEach(q=>row[q]=debitR[q]?debitR[q][i]:null);
+    indP.forEach(idx=>row[idx]=mP?mP[an][idx]:null);
+    indT.forEach(idx=>row[idx]=mT?mT[an][idx]:null);
+    return row;
+  });
+}
+
 function runSpearman(){
-  const base=S.baseDirecte;
-  if(!base||base.length<3){alert("Chargez le fichier Excel fusionne.");return;}
+  // Priorité : données calculées, sinon fichier externe
+  let base = null;
+  let source = "";
+
+  if(S.etccdiResults && S.debitResults){
+    base = fusionnerBase();
+    source = "calcule";
+  } else if(S.baseDirecte && S.baseDirecte.length>=3){
+    base = S.baseDirecte;
+    source = "externe";
+  }
+
+  if(!base||base.length<3){
+    alert("Calculez d abord les indices ETCCDI et les percentiles de debits, ou chargez un fichier fusionne.");
+    return;
+  }
+
   const cols=Object.keys(base[0]);
   const ac=cols.find(c=>c.toLowerCase().includes("ann")||c.toLowerCase().includes("year"))||cols[0];
   const dkws=["q5","q10","q50","q90","q95","qmoy"];
@@ -631,7 +772,7 @@ function runSpearman(){
     const x=base.map(r=>parseNum(r[idx]));
     final.forEach(d=>{mat[idx][d]=spearman(x,base.map(r=>parseNum(r[d])));});
   });
-  setState({spearmanResults:{mat,debits:final,indices:indCols}});
+  setState({spearmanResults:{mat,debits:final,indices:indCols,source}});
 }
 function expSpearman(){
   const r=S.spearmanResults;if(!r)return;
@@ -670,7 +811,8 @@ function attachEvents(){
       const d=S.importData[k];if(!d)return;
       const nm={precip:"Precipitations",tmax:"Tmax",tmin:"Tmin",debit:"Debits"};
       const fn={precip:"Precipitations_25stations.xlsx",tmax:"Tmax_4stations.xlsx",tmin:"Tmin_4stations.xlsx",debit:"Debits_Bonou.xlsx"};
-      xls([{name:nm[k],data:[Object.keys(d[0]),...d.map(r=>Object.values(r))]}],fn[k]);
+      const exportData = [Object.keys(d[0]),...d.map(r=>Object.values(r))];
+      xls([{name:nm[k],data:exportData,addStats:true,rawData:d}],fn[k]);
     };
   });
   // File base spearman
