@@ -70,10 +70,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1b2a;color:#e8f4f
 .dh{padding:0 20px 16px;border-bottom:1px solid #1a4a3a;margin-bottom:8px;}
 .dh .dt{font-size:16px;font-weight:700;color:#fff;}
 .dh .ds{font-size:11px;color:#6a9080;margin-top:2px;}
-.di{display:flex;align-items:center;gap:12px;padding:13px 20px;cursor:pointer;color:#8ab5a5;font-size:13px;font-weight:600;transition:background .15s;}
-.di:hover{background:rgba(78,203,160,.08);}
-.di.active{color:#4ecba0;background:rgba(78,203,160,.1);border-right:3px solid #4ecba0;}
-.di .ico{font-size:16px;width:22px;text-align:center;}
+.di{display:flex;align-items:center;padding:14px 20px;cursor:pointer;color:#8ab5a5;font-size:13px;font-weight:600;transition:all .15s;border-left:3px solid transparent;}
+.di:hover{background:rgba(78,203,160,.06);color:#c0d8d0;}
+.di.active{color:#4ecba0;background:rgba(78,203,160,.1);border-left:3px solid #4ecba0;}
 .pt{height:6px;background:#0d2235;border-radius:4px;overflow:hidden;margin-top:8px;}
 .pf{height:100%;background:linear-gradient(90deg,#0f6e56,#4ecba0);border-radius:4px;transition:width .4s;}
 .ib{background:rgba(78,203,160,.06);border-left:3px solid #4ecba0;border-radius:0 8px 8px 0;padding:10px 12px;font-size:12px;line-height:1.6;color:#c0d8d0;margin-top:8px;}
@@ -393,19 +392,46 @@ function hdr(title,sub,back){
   return`<div class="header"><div class="header-top"><div style="display:flex;align-items:center;gap:10px;">${S.user?'<button class="hamburger" onclick="setState({menuOpen:true})"><span></span><span></span><span></span></button>':''}<div class="app-label">HydroClim</div></div><div>${back?'<button class="back-btn" onclick="back()">← retour</button>':''}</div></div><h1>${title}</h1>${sub?`<p>${sub}</p>`:''}</div>`;
 }
 function back(){setState({screen:S.user?"dashboard":"accueil"});}
+function svgIcon(name){
+  const icons={
+    home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>`,
+    upload:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+    calc:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6.5L4.5 19a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 9.5V3"/><path d="M7.5 15h9"/></svg>`,
+    drop:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.8 6 11a6 6 0 0 1-12 0c0-4.2 6-11 6-11z"/></svg>`,
+    chart:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>`,
+    wave:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c1.5-4 3.5-4 5 0s3.5 4 5 0 3.5-4 5 0 3.5 4 5 0"/></svg>`,
+    phase:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 8l8 8"/></svg>`,
+    bell:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>`,
+    user:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>`,
+  };
+  return`<span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${icons[name]||""}</span>`;
+}
+
 function drw(){
   if(!S.user)return"";
   const items=[
-    {id:"dashboard",ic:"🏠",lb:"Tableau de bord"},
-    {id:"import",ic:"📂",lb:"Import donnees"},
-    {id:"etccdi",ic:"🧮",lb:"Calcul ETCCDI"},
-    {id:"debits",ic:"💧",lb:"Percentiles debits"},
-    {id:"spearman",ic:"📊",lb:"Analyse Spearman"},
-    {id:"os2",ic:"〜",lb:"Variabilite CWT"},
-    {id:"os3",ic:"⟳",lb:"Relations de phase"},
-    {id:"profil",ic:"👤",lb:"Mon profil"},
+    {id:"dashboard",ic:"home",lb:"Tableau de bord"},
+    {id:"import",  ic:"upload",lb:"Import des donnees"},
+    {id:"etccdi",  ic:"calc",lb:"Calcul ETCCDI"},
+    {id:"debits",  ic:"drop",lb:"Percentiles debits"},
+    {id:"spearman",ic:"chart",lb:"Analyse Spearman"},
+    {id:"os2",     ic:"wave",lb:"Variabilite CWT"},
+    {id:"os3",     ic:"phase",lb:"Relations de phase"},
+    {id:"alertes", ic:"bell",lb:"Alertes"},
+    {id:"profil",  ic:"user",lb:"Mon profil"},
   ];
-  return`<div class="drawer-overlay ${S.menuOpen?"open":""}" onclick="setState({menuOpen:false})"></div><div class="drawer ${S.menuOpen?"open":""}"><div class="dh"><div class="dt">HydroClim Analyzer</div><div class="ds">${S.user.nom} · ${S.user.role}</div></div>${items.map(it=>`<div class="di ${S.screen===it.id?"active":""}" onclick="setState({screen:'${it.id}',menuOpen:false})"><span class="ico">${it.ic}</span>${it.lb}</div>`).join("")}</div>`;
+  return`<div class="drawer-overlay ${S.menuOpen?"open":""}" onclick="setState({menuOpen:false})"></div>
+<div class="drawer ${S.menuOpen?"open":""}">
+  <div class="dh">
+    <div class="dt">HydroClim Analyzer</div>
+    <div class="ds">${S.user.nom} · <span style="text-transform:capitalize;color:#4ecba0;">${S.user.role}</span></div>
+  </div>
+  ${items.map(it=>`
+  <div class="di ${S.screen===it.id?"active":""}" onclick="setState({screen:'${it.id}',menuOpen:false})">
+    ${svgIcon(it.ic)}
+    <span style="margin-left:12px;">${it.lb}</span>
+  </div>`).join("")}
+</div>`;
 }
 
 // ---- ÉCRANS ----
