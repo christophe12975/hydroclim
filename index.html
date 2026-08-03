@@ -65,8 +65,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1b2a;color:#e8f4f
 .avatar{width:72px;height:72px;background:linear-gradient(135deg,#0f6e56,#4ecba0);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px;}
 .drawer-overlay{position:fixed;inset:0;background:rgba(3,8,14,.88);z-index:200;opacity:0;pointer-events:none;transition:opacity .25s;}
 .drawer-overlay.open{opacity:1;pointer-events:auto;}
-.drawer{position:fixed;top:0;left:0;bottom:0;width:78%;max-width:300px;background:#0d1b2a;border-right:1px solid #1a4a3a;z-index:201;transform:translateX(-100%);transition:transform .25s;display:flex;flex-direction:column;padding:20px 0;}
-.drawer.open{transform:translateX(0);}
+.drawer{position:fixed;top:0;left:50%;margin-left:-210px;bottom:0;width:78%;max-width:300px;background:#0d1b2a;border-right:1px solid #1a4a3a;z-index:201;transform:translateX(-100%) translateX(-210px);transition:transform .25s;display:flex;flex-direction:column;padding:20px 0;}
+.drawer.open{transform:translateX(0) translateX(-210px);}
+@media(max-width:480px){.drawer{left:0;margin-left:0;transform:translateX(-100%);}.drawer.open{transform:translateX(0);}}
 .dh{padding:0 20px 16px;border-bottom:1px solid #1a4a3a;margin-bottom:8px;}
 .dh .dt{font-size:16px;font-weight:700;color:#fff;}
 .dh .ds{font-size:11px;color:#6a9080;margin-top:2px;}
