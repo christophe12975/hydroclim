@@ -107,6 +107,7 @@ let S={
   debitResults:null,
   spearmanResults:null,
   cwtResults:null,cwtStatus:"",cwtZoom:null,
+  xwtwtcResults:null,xwtwtcStatus:"",xwtwtcZoom:null,
   spearmanQetiage:"Q5",spearmanQcrue:"Q95",
 };
 function setState(o){S={...S,...o};render();}
@@ -588,6 +589,111 @@ function waveSignif(Y,dt,scale,sigtest,lag1,siglvl,N){
     return fftTheor[a]*chisq;
   });
 }
+// ==================== XWT / WTC (Torrence & Compo 1998 / Grinsted et al. 2004) ====================
+function cwtRaw(z){return waveletCWT(z,1,0.25,2,24);} // memes parametres que le scalogramme OS2
+function fftTheorRed(variance,lag1,period){
+  return period.map(p=>{const freq=1/p;return variance*(1-lag1*lag1)/(1-2*lag1*Math.cos(freq*2*Math.PI)+lag1*lag1);});
+}
+function sampleVariance(x){const n=x.length,m=x.reduce((a,b)=>a+b,0)/n;return x.reduce((a,b)=>a+(b-m)**2,0)/(n-1);}
+// lissage temporel gaussien (largeur ~ echelle), ligne par ligne (echelle a)
+function gaussSmoothRow(row,sigma){
+  const n=row.length,half=Math.min(n-1,Math.max(1,Math.ceil(sigma*3)));
+  const out=new Array(n).fill(0);
+  for(let t=0;t<n;t++){
+    let sum=0,wsum=0;
+    for(let k=-half;k<=half;k++){
+      const idx=t+k;if(idx<0||idx>=n)continue;
+      const w=Math.exp(-0.5*(k/sigma)**2);
+      sum+=row[idx]*w;wsum+=w;
+    }
+    out[t]=wsum>0?sum/wsum:row[t];
+  }
+  return out;
+}
+// lissage en echelle (boxcar, largeur ~0.6/dj)
+function scaleSmooth2D(grid,dj){
+  const nS=grid.length,nT=grid[0].length;
+  const half=Math.max(1,Math.round(0.6/dj/2));
+  const out=grid.map(()=>new Array(nT).fill(0));
+  for(let t=0;t<nT;t++)for(let a=0;a<nS;a++){
+    let sum=0,cnt=0;
+    for(let k=-half;k<=half;k++){const idx=a+k;if(idx<0||idx>=nS)continue;sum+=grid[idx][t];cnt++;}
+    out[a][t]=cnt>0?sum/cnt:grid[a][t];
+  }
+  return out;
+}
+function computeWTCcoh(aRe,aIm,bRe,bIm,scale,dj){
+  const nS=scale.length,nT=aRe[0].length;
+  let sxyRe=[],sxyIm=[],sxx=[],syy=[];
+  for(let s=0;s<nS;s++){
+    const rowXyRe=[],rowXyIm=[],rowXx=[],rowYy=[];
+    for(let t=0;t<nT;t++){
+      const cre=aRe[s][t]*bRe[s][t]+aIm[s][t]*bIm[s][t];
+      const cim=aIm[s][t]*bRe[s][t]-aRe[s][t]*bIm[s][t];
+      rowXyRe.push(cre/scale[s]);rowXyIm.push(cim/scale[s]);
+      rowXx.push((aRe[s][t]**2+aIm[s][t]**2)/scale[s]);
+      rowYy.push((bRe[s][t]**2+bIm[s][t]**2)/scale[s]);
+    }
+    const sigma=Math.max(scale[s],1);
+    sxyRe.push(gaussSmoothRow(rowXyRe,sigma));
+    sxyIm.push(gaussSmoothRow(rowXyIm,sigma));
+    sxx.push(gaussSmoothRow(rowXx,sigma));
+    syy.push(gaussSmoothRow(rowYy,sigma));
+  }
+  sxyRe=scaleSmooth2D(sxyRe,dj);sxyIm=scaleSmooth2D(sxyIm,dj);
+  sxx=scaleSmooth2D(sxx,dj);syy=scaleSmooth2D(syy,dj);
+  const R2=sxyRe.map((row,s)=>row.map((v,t)=>{
+    const denom=sxx[s][t]*syy[s][t];
+    return denom>0?Math.min(1,(v*v+sxyIm[s][t]*sxyIm[s][t])/denom):0;
+  }));
+  return{R2};
+}
+function ar1Surrogate(n,lag1){
+  const x=[];let prev=0;
+  for(let i=0;i<n;i++){
+    const u1=Math.random()||1e-9,u2=Math.random();
+    const g=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
+    prev=i===0?g:lag1*prev+Math.sqrt(Math.max(0,1-lag1*lag1))*g;
+    x.push(prev);
+  }
+  return x;
+}
+// Calcule XWT + WTC (+ significativite) entre deux series standardisees (meme longueur)
+function computeXWTWTC(zx,zy){
+  const a=cwtRaw(zx),b=cwtRaw(zy);
+  const nS=a.scale.length,nT=zx.length;
+  const xwtPow=[],xwtPhase=[];
+  for(let s=0;s<nS;s++){
+    const pr=[],ph=[];
+    for(let t=0;t<nT;t++){
+      const re=a.waveRe[s][t]*b.waveRe[s][t]+a.waveIm[s][t]*b.waveIm[s][t];
+      const im=a.waveIm[s][t]*b.waveRe[s][t]-a.waveRe[s][t]*b.waveIm[s][t];
+      pr.push(Math.sqrt(re*re+im*im));ph.push(Math.atan2(im,re));
+    }
+    xwtPow.push(pr);xwtPhase.push(ph);
+  }
+  const lag1x=lag1Autocorr(zx),lag1y=lag1Autocorr(zy);
+  const varX=sampleVariance(zx),varY=sampleVariance(zy);
+  const fx=fftTheorRed(varX,lag1x,a.period),fy=fftTheorRed(varY,lag1y,a.period);
+  const Zv=chisquareInv(0.95,1); // approx (Grinsted), dof=1
+  const xwtSig=a.period.map((p,i)=>Zv*Math.sqrt(fx[i]*fy[i]));
+
+  const wtc=computeWTCcoh(a.waveRe,a.waveIm,b.waveRe,b.waveIm,a.scale,0.25);
+
+  // Significativite WTC par Monte Carlo reduit (surrogates AR1, meme lag1 que les series observees)
+  const NMC=25;
+  const samples=a.scale.map(()=>[]);
+  for(let it=0;it<NMC;it++){
+    const sx=ar1Surrogate(nT,lag1x),sy=ar1Surrogate(nT,lag1y);
+    const ca=cwtRaw(sx),cb=cwtRaw(sy);
+    const w2=computeWTCcoh(ca.waveRe,ca.waveIm,cb.waveRe,cb.waveIm,ca.scale,0.25);
+    for(let s=0;s<nS;s++)for(let t=0;t<nT;t++)samples[s].push(w2.R2[s][t]);
+  }
+  const wtcSig95=samples.map(arr=>{arr.sort((x,y)=>x-y);return arr[Math.min(arr.length-1,Math.floor(arr.length*0.95))];});
+
+  return{period:a.period,coi:a.coi,scale:a.scale,xwtPow,xwtPhase,xwtSig,wtcR2:wtc.R2,wtcSig95,lag1x,lag1y};
+}
+
 // Calcule scalogramme + GWS pour une serie (standardisee au prealable par l'appelant)
 function computeCWT(signal){
   const n=signal.length,dt=1,dj=0.25,s0=2*dt,j1=Math.round(6/dj);
@@ -608,7 +714,7 @@ function xlsMeta(){
     ["Version","1.0"],
     ["Auteur","Christophe VODOUNOU"],
     ["Institution","ENSGMM/UNSTIM Abomey - Benin"],
-    ["Bassin","Oueme a Bonou"],
+    ["Bassin","Ouémé à Bonou"],
     ["Periode","1991-2020"],
     ["Encadrant","Dr.(MC) Iboukoun Eliezer BIAO"],
     ["Date export",new Date().toLocaleDateString("fr-FR")],
@@ -890,17 +996,69 @@ function sSpearman(){
   </div>${drw()}`;
 }
 
+function getXWTCouples(){
+  const sr=S.spearmanResults;if(!sr||!sr.indicesFinal)return[];
+  const couples=[];
+  sr.indicesFinal.forEach(idx=>{
+    sr.debits.forEach(d=>{
+      const c=sr.mat[idx]&&sr.mat[idx][d];
+      if(c&&c.pval!==null&&c.pval<0.05)couples.push({idx,d,rho:c.rho,pval:c.pval});
+    });
+  });
+  return couples;
+}
+function zscoreCol(base,col){
+  const raw=base.map(r=>parseNum(r[col])).map(v=>v===null?0:v);
+  const n=raw.length,m=raw.reduce((a,b)=>a+b,0)/n;
+  const sd=Math.sqrt(raw.reduce((a,b)=>a+(b-m)**2,0)/(n-1))||1;
+  return raw.map(v=>(v-m)/sd);
+}
+function runXWTWTCAll(){
+  const couples=getXWTCouples();
+  if(!couples.length){alert("Aucun couple (indice retenu x debit) significatif — verifiez l analyse Spearman.");return;}
+  const base=fusionnerBase();
+  if(!base||base.length<8){alert("Base fusionnee insuffisante (min. 8 annees).");return;}
+  setState({xwtwtcStatus:"Calcul en cours... (Monte Carlo, patientez)"});
+  setTimeout(()=>{
+    try{
+      const availCols=Object.keys(base[0]);
+      const t=base.map(r=>r.Annee);
+      const out={};
+      couples.forEach(({idx,d,rho,pval})=>{
+        const cIdx=availCols.find(c=>c.toLowerCase()===idx.toLowerCase());
+        const cD=availCols.find(c=>c.toLowerCase()===d.toLowerCase());
+        if(!cIdx||!cD)return;
+        const zx=zscoreCol(base,cIdx),zy=zscoreCol(base,cD);
+        const full=computeXWTWTC(zx,zy);
+        const cropIdx=full.period.map((p,i)=>i).filter(i=>full.period[i]>=2&&full.period[i]<=16);
+        out[idx+"__"+d]={
+          idx,d,rho,pval,
+          period:cropIdx.map(i=>full.period[i]),
+          xwtPow:cropIdx.map(i=>full.xwtPow[i]),
+          xwtPhase:cropIdx.map(i=>full.xwtPhase[i]),
+          xwtSig:cropIdx.map(i=>full.xwtSig[i]),
+          wtcR2:cropIdx.map(i=>full.wtcR2[i]),
+          wtcSig95:cropIdx.map(i=>full.wtcSig95[i]),
+          coi:full.coi,lag1x:full.lag1x,lag1y:full.lag1y,
+        };
+      });
+      setState({xwtwtcResults:{t,pairs:out},xwtwtcStatus:"Calcul termine avec succes"});
+    }catch(err){setState({xwtwtcStatus:"Erreur: "+err.message});}
+  },50);
+}
 function runCWTAll(){
   const base=fusionnerBase();
   if(!base||base.length<8){alert("Base fusionnee insuffisante (min. 8 annees) pour la CWT.");return;}
+  const sr=S.spearmanResults;
+  if(!sr||!sr.indicesFinal){alert("Lancez d abord l analyse Spearman (avec sa selection multicolinearite) : les scalogrammes se basent sur les indices retenus a cette etape.");return;}
   setState({cwtStatus:"Calcul en cours..."});
   setTimeout(()=>{
     try{
       const availCols=Object.keys(base[0]);
-      // Liste fixe (script MATLAB) : debits + indices significatifs retenus
-      const wanted=["Q5","Q50","Q95","PRCPTOT","RX1day","Rx5day","CDD","TR20","CSDI"];
-      const cols=wanted.map(w=>availCols.find(c=>c.toLowerCase()===w.toLowerCase())).filter(Boolean);
-      if(!cols.length){alert("Aucune des variables attendues (Q5,Q50,Q95,PRCPTOT,RX1day,Rx5day,CDD,TR20,CSDI) n a ete trouvee dans la base fusionnee.");setState({cwtStatus:""});return;}
+      // Variables dynamiques = debits utilises pour Spearman + indices retenus (significatifs + filtres multicolinearite)
+      const wanted=[...sr.debits,...sr.indicesFinal];
+      const cols=wanted.map(w=>availCols.find(c=>c.toLowerCase()===w.toLowerCase())).filter((c,i,a)=>c&&a.indexOf(c)===i);
+      if(!cols.length){alert("Aucune variable retenue par l analyse Spearman n a ete trouvee dans la base fusionnee.");setState({cwtStatus:""});return;}
       const t=base.map(r=>r.Annee);
       const out={};
       cols.forEach(c=>{
@@ -908,7 +1066,17 @@ function runCWTAll(){
         const n=raw.length,m=raw.reduce((a,b)=>a+b,0)/n;
         const sd=Math.sqrt(raw.reduce((a,b)=>a+(b-m)**2,0)/(n-1))||1; // ecart-type d echantillon (zscore MATLAB)
         const z=raw.map(v=>(v-m)/sd);
-        out[c]=computeCWT(z);
+        const full=computeCWT(z);
+        // Recadrage sur 2-16 ans (identique au script MATLAB : idx_period = find(period>=2 & period<=16))
+        const idx=full.period.map((p,i)=>i).filter(i=>full.period[i]>=2&&full.period[i]<=16);
+        out[c]={
+          period:idx.map(i=>full.period[i]),
+          power:idx.map(i=>full.power[i]),
+          sig95:idx.map(i=>full.sig95[i]),
+          gws:idx.map(i=>full.gws[i]),
+          signifGWS:idx.map(i=>full.signifGWS[i]),
+          coi:full.coi,lag1:full.lag1,
+        };
       });
       setState({cwtResults:{t,vars:out},cwtStatus:"Calcul termine avec succes"});
     }catch(err){setState({cwtStatus:"Erreur: "+err.message});}
@@ -943,61 +1111,127 @@ function downloadCWTImage(canvasId,varName){
   link.href=cvs.toDataURL("image/png");
   link.click();
 }
+// ---- Axes (annees en X, periodes en Y) dessines directement sur le canvas ----
+function axisMargins(W,H){
+  const mL=Math.round(W*0.11),mB=Math.round(H*0.14),mT=Math.round(H*0.03),mR=Math.round(W*0.02);
+  return{mL,mB,mT,mR,pX:mL,pY:mT,pW:W-mL-mR,pH:H-mT-mB};
+}
+function niceYearTicks(t0,t1,maxTicks){
+  const span=t1-t0;if(span<=0)return[t0];
+  let step=Math.pow(10,Math.floor(Math.log10(span/maxTicks||1)));
+  const mult=[1,2,2.5,5,10];
+  let best=step*10;
+  for(const m of mult){const cand=step*m;if(span/cand<=maxTicks){best=cand;break;}}
+  const start=Math.ceil(t0/best)*best;
+  const ticks=[];
+  for(let v=start;v<=t1+1e-6;v+=best)ticks.push(Math.round(v));
+  return ticks.length?ticks:[t0,t1];
+}
+function drawAxes(ctx,m,W,H,t,periodTicks,pMin,pMax){
+  const{pX,pY,pW,pH}=m;
+  ctx.save();
+  ctx.strokeStyle="#4a6a5a";ctx.fillStyle="#8ab5a5";
+  ctx.font=Math.max(9,Math.round(W*0.018))+"px sans-serif";
+  ctx.lineWidth=1;
+  // cadre
+  ctx.strokeRect(pX+0.5,pY+0.5,pW,pH);
+  // ticks Y (periodes)
+  ctx.textAlign="right";ctx.textBaseline="middle";
+  periodTicks.forEach(pv=>{
+    const plog=Math.log2(pv);
+    if(plog<pMin-1e-6||plog>pMax+1e-6)return;
+    const py=pY+((plog-pMin)/(pMax-pMin))*pH;
+    ctx.beginPath();ctx.moveTo(pX-4,py);ctx.lineTo(pX,py);ctx.stroke();
+    ctx.fillText(String(pv),pX-7,py);
+  });
+  // ticks X (annees)
+  const nT=t.length;
+  const yrTicks=niceYearTicks(t[0],t[nT-1],Math.max(3,Math.round(pW/70)));
+  ctx.textAlign="center";ctx.textBaseline="top";
+  yrTicks.forEach(yr=>{
+    const frac=(yr-t[0])/(t[nT-1]-t[0]||1);
+    if(frac<-0.02||frac>1.02)return;
+    const px=pX+frac*pW;
+    ctx.beginPath();ctx.moveTo(px,pY+pH);ctx.lineTo(px,pY+pH+4);ctx.stroke();
+    ctx.fillText(String(yr),px,pY+pH+6);
+  });
+  // labels axes
+  ctx.fillStyle="#a8c5b8";
+  ctx.font=Math.max(10,Math.round(W*0.02))+"px sans-serif";
+  ctx.textAlign="center";ctx.textBaseline="alphabetic";
+  ctx.fillText("Annee",pX+pW/2,H-4);
+  ctx.save();
+  ctx.translate(Math.max(10,pX*0.32),pY+pH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText("Periode (ans)",0,0);
+  ctx.restore();
+  ctx.restore();
+}
 function drawCWTCard(canvasId,r,t){
   const cvs=document.getElementById(canvasId);
   if(!cvs)return;
   const ctx=cvs.getContext("2d");
   const W=cvs.width,H=cvs.height;
   ctx.clearRect(0,0,W,H);
+  const m=axisMargins(W,H);const{pX,pY,pW,pH}=m;
   const nT=t.length,nS=r.period.length;
   const periodLog=r.period.map(p=>Math.log2(p));
   const pMin=Math.min(...periodLog),pMax=Math.max(...periodLog);
   const maxPow=Math.max(...r.power.flat());
-  const img=ctx.createImageData(W,H);
-  for(let py=0;py<H;py++){
-    const plog=pMin+(py/(H-1))*(pMax-pMin); // haut=periode courte
-    // position continue dans l echelle des periodes (log2), pour interpolation bilineaire
+  const img=ctx.createImageData(pW,pH);
+  for(let py=0;py<pH;py++){
+    const plog=pMin+(py/(pH-1))*(pMax-pMin); // haut=periode courte
     let a0=0;while(a0<nS-2&&periodLog[a0+1]<plog)a0++;
     const a1=Math.min(a0+1,nS-1);
     const span=periodLog[a1]-periodLog[a0];
     const fa=span>0?Math.max(0,Math.min(1,(plog-periodLog[a0])/span)):0;
-    for(let px=0;px<W;px++){
-      const tiCont=(px/(W-1))*(nT-1);
+    for(let px=0;px<pW;px++){
+      const tiCont=(px/(pW-1))*(nT-1);
       const t0=Math.floor(tiCont),t1=Math.min(t0+1,nT-1),ft=tiCont-t0;
       const v00=r.power[a0][t0],v01=r.power[a0][t1],v10=r.power[a1][t0],v11=r.power[a1][t1];
       const vTop=v00+(v01-v00)*ft,vBot=v10+(v11-v10)*ft;
       const val=(vTop+(vBot-vTop)*fa)/(maxPow||1);
       const[cr,cg,cb]=CWT_COLORMAP(val);
-      const idx=(py*W+px)*4;
+      const idx=(py*pW+px)*4;
       img.data[idx]=cr;img.data[idx+1]=cg;img.data[idx+2]=cb;img.data[idx+3]=255;
     }
   }
-  ctx.putImageData(img,0,0);
-  // COI (zone non fiable) : voile blanc semi-transparent
+  ctx.putImageData(img,pX,pY);
+  // COI (zone non fiable) : voile semi-transparent, clampe sur [pMin,pMax] comme le script MATLAB
   ctx.save();ctx.globalAlpha=0.45;ctx.fillStyle="#0d1b2a";
   ctx.beginPath();
-  for(let px=0;px<W;px++){
-    const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
-    const coiLog=Math.log2(Math.min(r.coi[ti],r.period[nS-1]));
-    const py=Math.max(0,((coiLog-pMin)/(pMax-pMin))*(H-1));
-    if(px===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+  for(let px=0;px<pW;px++){
+    const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
+    let coiLog=Math.log2(Math.max(r.coi[ti],1e-5));
+    coiLog=Math.max(pMin,Math.min(pMax,coiLog));
+    const py=pY+((coiLog-pMin)/(pMax-pMin))*pH;
+    if(px===0)ctx.moveTo(pX+px,py);else ctx.lineTo(pX+px,py);
   }
-  ctx.lineTo(W,0);ctx.lineTo(0,0);ctx.closePath();ctx.fill();ctx.restore();
+  ctx.lineTo(pX+pW,pY);ctx.lineTo(pX,pY);ctx.closePath();ctx.fill();ctx.restore();
   // Contour de significativite (bord des cellules ou sig95>=1)
   ctx.save();ctx.strokeStyle="#111";ctx.lineWidth=1.3;ctx.beginPath();
-  for(let py=0;py<H;py++){
-    const plog=pMin+(py/(H-1))*(pMax-pMin);
+  for(let py=0;py<pH;py++){
+    const plog=pMin+(py/(pH-1))*(pMax-pMin);
     let a=0;while(a<nS-1&&periodLog[a+1]<plog)a++;
     let prevSig=null;
-    for(let px=0;px<W;px++){
-      const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
+    for(let px=0;px<pW;px++){
+      const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
       const sig=r.sig95[a][ti]>=1;
-      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(px,py);ctx.lineTo(px,py+1);}
+      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(pX+px,pY+py);ctx.lineTo(pX+px,pY+py+1);}
       prevSig=sig;
     }
   }
   ctx.stroke();ctx.restore();
-  // Axes periode (repere textuel) deja affiches en HTML a cote
+  const periodTicks=[2,4,8,16].filter(pv=>Math.log2(pv)>=pMin-0.3&&Math.log2(pv)<=pMax+0.3);
+  drawAxes(ctx,m,W,H,t,periodTicks,pMin,pMax);
+}
+function downloadCWTPng(v){
+  const cvs=document.getElementById("cwtz-"+v)||document.getElementById("cwt-"+v);
+  if(!cvs)return;
+  const a=document.createElement("a");
+  a.href=cvs.toDataURL("image/png");
+  a.download="Scalogramme_"+v+".png";
+  a.click();
 }
 function drawAllCWT(){
   if(!S.cwtResults||S.screen!=="os2")return;
@@ -1005,14 +1239,129 @@ function drawAllCWT(){
   Object.keys(vars).forEach(v=>drawCWTCard("cwt-"+v,vars[v],t));
   if(S.cwtZoom&&vars[S.cwtZoom])drawCWTCard("cwtz-"+S.cwtZoom,vars[S.cwtZoom],t);
 }
+
+
+// ---- Rendu XWT / WTC (heatmap + fleches de phase, noires si dans le COI, grises sinon) ----
+function drawXWTWTCCard(canvasId,res,t,mode){
+  const cvs=document.getElementById(canvasId);
+  if(!cvs)return;
+  const ctx=cvs.getContext("2d");
+  const W=cvs.width,H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+  const m=axisMargins(W,H);const{pX,pY,pW,pH}=m;
+  const nT=t.length,nS=res.period.length;
+  const periodLog=res.period.map(p=>Math.log2(p));
+  const pMin=Math.min(...periodLog),pMax=Math.max(...periodLog);
+  const grid=mode==="xwt"?res.xwtPow:res.wtcR2;
+  const sigGrid=mode==="xwt"?res.xwtSig:res.wtcSig95;
+  const maxVal=mode==="xwt"?Math.max(...grid.flat()):1;
+  const img=ctx.createImageData(pW,pH);
+  for(let py=0;py<pH;py++){
+    const plog=pMin+(py/(pH-1))*(pMax-pMin);
+    let a0=0;while(a0<nS-2&&periodLog[a0+1]<plog)a0++;
+    const a1=Math.min(a0+1,nS-1);
+    const span=periodLog[a1]-periodLog[a0];
+    const fa=span>0?Math.max(0,Math.min(1,(plog-periodLog[a0])/span)):0;
+    for(let px=0;px<pW;px++){
+      const tiCont=(px/(pW-1))*(nT-1);
+      const t0=Math.floor(tiCont),t1=Math.min(t0+1,nT-1),ft=tiCont-t0;
+      const v00=grid[a0][t0],v01=grid[a0][t1],v10=grid[a1][t0],v11=grid[a1][t1];
+      const vTop=v00+(v01-v00)*ft,vBot=v10+(v11-v10)*ft;
+      const val=(vTop+(vBot-vTop)*fa)/(maxVal||1);
+      const[cr,cg,cb]=CWT_COLORMAP(val);
+      const idx=(py*pW+px)*4;
+      img.data[idx]=cr;img.data[idx+1]=cg;img.data[idx+2]=cb;img.data[idx+3]=255;
+    }
+  }
+  ctx.putImageData(img,pX,pY);
+  // COI
+  ctx.save();ctx.globalAlpha=0.45;ctx.fillStyle="#0d1b2a";ctx.beginPath();
+  for(let px=0;px<pW;px++){
+    const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
+    let coiLog=Math.log2(Math.max(res.coi[ti],1e-5));
+    coiLog=Math.max(pMin,Math.min(pMax,coiLog));
+    const py=pY+((coiLog-pMin)/(pMax-pMin))*pH;
+    if(px===0)ctx.moveTo(pX+px,py);else ctx.lineTo(pX+px,py);
+  }
+  ctx.lineTo(pX+pW,pY);ctx.lineTo(pX,pY);ctx.closePath();ctx.fill();ctx.restore();
+  // contour significativite
+  ctx.save();ctx.strokeStyle="#111";ctx.lineWidth=1.3;ctx.beginPath();
+  for(let py=0;py<pH;py++){
+    const plog=pMin+(py/(pH-1))*(pMax-pMin);
+    let a=0;while(a<nS-1&&periodLog[a+1]<plog)a++;
+    let prevSig=null;
+    for(let px=0;px<pW;px++){
+      const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
+      const sig=grid[a][ti]>=sigGrid[a];
+      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(pX+px,pY+py);ctx.lineTo(pX+px,pY+py+1);}
+      prevSig=sig;
+    }
+  }
+  ctx.stroke();ctx.restore();
+  // fleches de phase (grille eparse, noires si dans le COI, grises sinon)
+  if(res.xwtPhase){
+    const nx=Math.min(14,nT),ny=Math.min(9,nS);
+    const arrowLen=Math.min(pW/nx,pH/ny)*0.38;
+    for(let iy=0;iy<ny;iy++){
+      const plog=pMin+((iy+0.5)/ny)*(pMax-pMin);
+      let a=0;while(a<nS-2&&periodLog[a+1]<plog)a++;
+      for(let ix=0;ix<nx;ix++){
+        const ti=Math.min(nT-1,Math.round(((ix+0.5)/nx)*(nT-1)));
+        const px=pX+((ix+0.5)/nx)*pW,py=pY+((iy+0.5)/ny)*pH;
+        const phase=res.xwtPhase[a][ti];
+        let coiLog=Math.log2(Math.max(res.coi[ti],1e-5));
+        const reliable=periodLog[a]<=coiLog;
+        ctx.save();
+        ctx.strokeStyle=reliable?"#111":"rgba(120,120,120,.55)";
+        ctx.fillStyle=ctx.strokeStyle;
+        ctx.lineWidth=1;
+        ctx.translate(px,py);ctx.rotate(phase);
+        ctx.beginPath();ctx.moveTo(-arrowLen/2,0);ctx.lineTo(arrowLen/2,0);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(arrowLen/2,0);ctx.lineTo(arrowLen/2-4,-2.5);ctx.lineTo(arrowLen/2-4,2.5);ctx.closePath();ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+  const periodTicks=[2,4,8,16].filter(pv=>Math.log2(pv)>=pMin-0.3&&Math.log2(pv)<=pMax+0.3);
+  drawAxes(ctx,m,W,H,t,periodTicks,pMin,pMax);
+}
+function drawAllXWTWTC(){
+  if(!S.xwtwtcResults||S.screen!=="os3")return;
+  const{t,pairs}=S.xwtwtcResults;
+  Object.keys(pairs).forEach(k=>{
+    drawXWTWTCCard("xwt-"+k,pairs[k],t,"xwt");
+    drawXWTWTCCard("wtc-"+k,pairs[k],t,"wtc");
+  });
+  if(S.xwtwtcZoom&&pairs[S.xwtwtcZoom]){
+    drawXWTWTCCard("xwtz-"+S.xwtwtcZoom,pairs[S.xwtwtcZoom],t,"xwt");
+    drawXWTWTCCard("wtcz-"+S.xwtwtcZoom,pairs[S.xwtwtcZoom],t,"wtc");
+  }
+}
+function downloadXWTWTCPng(k,mode){
+  const cvs=document.getElementById((mode==="xwt"?"xwtz-":"wtcz-")+k)||document.getElementById((mode==="xwt"?"xwt-":"wtc-")+k);
+  if(!cvs)return;
+  const a=document.createElement("a");
+  a.href=cvs.toDataURL("image/png");
+  a.download=(mode==="xwt"?"XWT_":"WTC_")+k+".png";
+  a.click();
+}
+
 function sOS2(){
   const r=S.cwtResults;
   const hasBase=!!(S.etccdiResults&&S.debitResults);
+  const sr=S.spearmanResults;
   let body="";
   if(!hasBase){
     body=`<div class="alert alert-info">Calculez d abord les indices ETCCDI et les percentiles de debits (la base fusionnee alimente la CWT).</div>`;
+  } else if(!sr||!sr.indicesFinal){
+    body=`<div class="alert alert-info">Lancez d abord l analyse Spearman (Ecran "Analyse Spearman") : les scalogrammes CWT se synchronisent automatiquement sur les debits + indices retenus a cette etape (significatifs et filtres par multicolinearite).</div>`;
   } else {
-    body=`<div class="card"><div class="card-title">Scalogrammes CWT (Morlet) + GWS</div><div class="card-sub">Variables : Q5, Q50, Q95, PRCPTOT, RX1day, Rx5day, CDD, TR20, CSDI · standardisation z-score (ecart-type d echantillon, n-1) · un graphique par variable</div><button class="btn-primary" onclick="runCWTAll()" ${S.cwtStatus==="Calcul en cours..."?"disabled":""}>${S.cwtStatus==="Calcul en cours..."?"Calcul...":"Calculer les scalogrammes"}</button>${S.cwtStatus&&S.cwtStatus!=="Calcul en cours..."?`<div class="alert ${S.cwtStatus.startsWith("Erreur")?"alert-error":"alert-success"}" style="margin-top:8px;">${S.cwtStatus}</div>`:""}</div>`;
+    const currentVars=[...sr.debits,...sr.indicesFinal];
+    const stale=r&&Object.keys(r.vars).sort().join(",")!==currentVars.slice().sort().join(",");
+    body=`<div class="card"><div class="card-title">Scalogrammes CWT (Morlet) + GWS</div><div class="card-sub">Synchronise sur la selection Spearman actuelle · standardisation z-score (ecart-type d echantillon, n-1) · un graphique par variable</div>
+      <div style="font-size:11px;color:#8ab5a5;background:#0d2235;padding:8px;border-radius:8px;margin-bottom:8px;">Variables actuellement retenues : <strong style="color:#4ecba0;">${currentVars.join(", ")}</strong></div>
+      ${stale?`<div class="alert alert-info" style="margin-bottom:8px;">La selection Spearman a change depuis le dernier calcul — recalculez pour resynchroniser les scalogrammes.</div>`:""}
+      <button class="btn-primary" onclick="runCWTAll()" ${S.cwtStatus==="Calcul en cours..."?"disabled":""}>${S.cwtStatus==="Calcul en cours..."?"Calcul...":(r?"Recalculer les scalogrammes":"Calculer les scalogrammes")}</button>${S.cwtStatus&&S.cwtStatus!=="Calcul en cours..."?`<div class="alert ${S.cwtStatus.startsWith("Erreur")?"alert-error":"alert-success"}" style="margin-top:8px;">${S.cwtStatus}</div>`:""}</div>`;
     if(r){
       const{t,vars}=r;
       Object.keys(vars).forEach(v=>{
@@ -1040,6 +1389,7 @@ function sOS2(){
             </div>
           </div>
           <div style="font-size:9px;color:#4a6a5a;margin-top:4px;">Periodes (ans) axe Y : ${periodTicks.join(" · ")} — zone grisee = cone d influence (COI) · contour noir = significatif p&lt;0.05</div>
+          <button class="btn-secondary" style="margin-top:8px;" onclick="event.stopPropagation();downloadCWTPng('${v}')">Telecharger en PNG</button>
         </div>`;
       });
     }
@@ -1056,7 +1406,10 @@ function sOS2(){
       <div style="background:#0f2030;border:1px solid #234055;border-radius:14px;padding:16px;max-width:96vw;max-height:92vh;overflow:auto;" onclick="event.stopPropagation()">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <div style="font-size:16px;font-weight:800;color:#fff;">${v} — vue agrandie</div>
-          <button class="back-btn" onclick="setState({cwtZoom:null})">✕ fermer</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" style="width:auto;padding:8px 14px;margin:0;" onclick="downloadCWTPng('${v}')">Telecharger PNG</button>
+            <button class="back-btn" onclick="setState({cwtZoom:null})">✕ fermer</button>
+          </div>
         </div>
         <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;">
           <div style="flex:3;min-width:280px;">
@@ -1078,7 +1431,77 @@ function sOS2(){
   })();
   return`${hdr("Variabilite CWT","Scalogrammes en ondelettes",true)}<div class="content">${body}</div>${zoomOverlay}${drw()}`;
 }
-function sOS3(){return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content"><div class="card"><div class="card-title">OS3 — En developpement</div><div class="ib">Les paires significatives seront calculees automatiquement.</div></div></div>${drw()}`;}
+function sOS3(){
+  const sr=S.spearmanResults;
+  const r=S.xwtwtcResults;
+  let body="";
+  if(!sr||!sr.indicesFinal){
+    body=`<div class="alert alert-info">Lancez d abord l analyse Spearman (avec sa selection multicolinearite) : les couples XWT/WTC se construisent automatiquement a partir des paires indice x debit significatives et retenues.</div>`;
+  } else {
+    const couples=getXWTCouples();
+    if(!couples.length){
+      body=`<div class="alert alert-info">Aucune paire (indice retenu x debit) n est actuellement significative (p&lt;0.05) — aucun XWT/WTC a calculer.</div>`;
+    } else {
+      const currentKeys=couples.map(c=>c.idx+"__"+c.d);
+      const stale=r&&Object.keys(r.pairs).sort().join(",")!==currentKeys.slice().sort().join(",");
+      body=`<div class="card"><div class="card-title">XWT (cross-wavelet) + WTC (coherence)</div><div class="card-sub">Couples generes automatiquement depuis les paires indice x debit significatives et retenues (analyse Spearman) · Monte Carlo reduit (25 surrogates AR1) pour la significativite WTC</div>
+        <div style="font-size:11px;color:#8ab5a5;background:#0d2235;padding:8px;border-radius:8px;margin-bottom:8px;">Couples actuels (${couples.length}) : <strong style="color:#4ecba0;">${couples.map(c=>`${c.idx}–${c.d}`).join(", ")}</strong></div>
+        ${stale?`<div class="alert alert-info" style="margin-bottom:8px;">La selection Spearman a change — recalculez pour resynchroniser.</div>`:""}
+        <button class="btn-primary" onclick="runXWTWTCAll()" ${S.xwtwtcStatus.startsWith("Calcul en cours")?"disabled":""}>${S.xwtwtcStatus.startsWith("Calcul en cours")?"Calcul...":(r?"Recalculer":"Calculer XWT + WTC")}</button>
+        ${S.xwtwtcStatus&&!S.xwtwtcStatus.startsWith("Calcul en cours")?`<div class="alert ${S.xwtwtcStatus.startsWith("Erreur")?"alert-error":"alert-success"}" style="margin-top:8px;">${S.xwtwtcStatus}</div>`:S.xwtwtcStatus?`<div class="alert alert-info" style="margin-top:8px;">${S.xwtwtcStatus}</div>`:""}
+      </div>`;
+      if(r){
+        const{t,pairs}=r;
+        Object.keys(pairs).forEach(k=>{
+          const res=pairs[k];
+          const periodTicks=[2,4,8,16].filter(p=>p>=Math.min(...res.period)&&p<=Math.max(...res.period));
+          body+=`<div class="card">
+            <div class="card-title">${res.idx} ↔ ${res.d}</div>
+            <div class="card-sub">Spearman : rho=${res.rho.toFixed(3)} (p=${res.pval.toFixed(4)}) · alpha_x=${res.lag1x.toFixed(3)} alpha_y=${res.lag1y.toFixed(3)} · <span style="color:#4ecba0;">🔍 cliquer pour agrandir</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;cursor:zoom-in;" onclick="setState({xwtwtcZoom:'${k}'})">
+              <div>
+                <div style="font-size:10px;color:#6a9080;text-align:center;margin-bottom:2px;">XWT (puissance croisee)</div>
+                <canvas id="xwt-${k}" width="500" height="320" style="width:100%;border-radius:6px;display:block;"></canvas>
+              </div>
+              <div>
+                <div style="font-size:10px;color:#6a9080;text-align:center;margin-bottom:2px;">WTC (coherence)</div>
+                <canvas id="wtc-${k}" width="500" height="320" style="width:100%;border-radius:6px;display:block;"></canvas>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:#6a9080;margin-top:2px;"><span>${t[0]}</span><span>Temps</span><span>${t[t.length-1]}</span></div>
+            <div style="font-size:9px;color:#4a6a5a;margin-top:4px;">Periodes (ans) : ${periodTicks.join(" · ")} — voile = COI · contour noir = significatif (chi2 approx. pour XWT, Monte Carlo pour WTC) · fleches : phase (→ en phase, ← opposition, ↑/↓ decalage 1/4 cycle), noires = fiable (dans COI), grises = hors COI</div>
+          </div>`;
+        });
+      }
+    }
+  }
+  const zoomOverlay=(()=>{
+    if(!S.xwtwtcZoom||!r||!r.pairs[S.xwtwtcZoom])return"";
+    const k=S.xwtwtcZoom,res=r.pairs[k],t=r.t;
+    const periodTicks=[2,4,8,16].filter(p=>p>=Math.min(...res.period)&&p<=Math.max(...res.period));
+    return`<div style="position:fixed;inset:0;background:rgba(3,8,14,.92);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="setState({xwtwtcZoom:null})">
+      <div style="background:#0f2030;border:1px solid #234055;border-radius:14px;padding:16px;max-width:96vw;max-height:92vh;overflow:auto;" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:16px;font-weight:800;color:#fff;">${res.idx} ↔ ${res.d} — vue agrandie</div>
+          <button class="back-btn" onclick="setState({xwtwtcZoom:null})">✕ fermer</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:12px;color:#8ab5a5;">XWT</span><button class="btn-secondary" style="width:auto;padding:6px 10px;margin:0;font-size:11px;" onclick="downloadXWTWTCPng('${k}','xwt')">PNG</button></div>
+            <canvas id="xwtz-${k}" width="900" height="580" style="width:100%;border-radius:8px;display:block;"></canvas>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:12px;color:#8ab5a5;">WTC</span><button class="btn-secondary" style="width:auto;padding:6px 10px;margin:0;font-size:11px;" onclick="downloadXWTWTCPng('${k}','wtc')">PNG</button></div>
+            <canvas id="wtcz-${k}" width="900" height="580" style="width:100%;border-radius:8px;display:block;"></canvas>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ab5a5;margin-top:6px;"><span>${t[0]}</span><span>Temps</span><span>${t[t.length-1]}</span></div>
+        <div style="font-size:11px;color:#6a9080;margin-top:4px;">Periodes (ans) : ${periodTicks.join(" · ")}</div>
+      </div>
+    </div>`;
+  })();
+  return`${hdr("Relations de phase","XWT + WTC + Coherence",true)}<div class="content">${body}</div>${zoomOverlay}${drw()}`;
+}
 function sAlertes(){
   const r=S.debitResults;
   let body='<div class="alert alert-info">Calculez les percentiles de debits pour voir les alertes.</div>';
@@ -1250,7 +1673,7 @@ function runSpearman(){
   };
   const indicesFinal=[...multicol.precip.retained,...multicol.temp.retained];
 
-  setState({spearmanResults:{mat,debits:final,indicesAll:indColsAll,sigIndices,multicol,indicesFinal,source}});
+  setState({spearmanResults:{mat,debits:final,indicesAll:indColsAll,sigIndices,multicol,indicesFinal,source},cwtResults:null,cwtStatus:"",xwtwtcResults:null,xwtwtcStatus:""});
 }
 function expSpearman(){
   const r=S.spearmanResults;if(!r)return;
@@ -1321,6 +1744,7 @@ function render(){
   document.getElementById("app").innerHTML=(SCR[S.screen]||sAccueil)();
   attachEvents();
   if(S.screen==="os2")setTimeout(drawAllCWT,0);
+  if(S.screen==="os3")setTimeout(drawAllXWTWTC,0);
 }
 render();
 </script>
