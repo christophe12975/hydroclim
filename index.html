@@ -6,6 +6,7 @@
 <title>HydroClim Analyzer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1b2a;color:#e8f4f0;min-height:100vh;}
@@ -714,9 +715,9 @@ function xlsMeta(){
     ["Version","1.0"],
     ["Auteur","Christophe VODOUNOU"],
     ["Institution","ENSGMM/UNSTIM Abomey - Benin"],
-    ["Bassin","Ouémé à Bonou"],
+    ["Bassin","Oueme a Bonou"],
     ["Periode","1991-2020"],
-    ["Encadrant","Dr.(MC) Iboukoun Eliezer BIAO"],
+    ["Encadrant","Dr. Iboukoun Eliezer BIAO"],
     ["Date export",new Date().toLocaleDateString("fr-FR")],
   ];
 }
@@ -780,7 +781,6 @@ function svgIcon(name){
   };
   return`<span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${icons[name]||""}</span>`;
 }
-
 function drw(){
   if(!S.user)return"";
   const items=[
@@ -789,6 +789,7 @@ function drw(){
     {id:"etccdi",  ic:"calc",lb:"Calcul ETCCDI"},
     {id:"debits",  ic:"drop",lb:"Percentiles debits"},
     {id:"spearman",ic:"chart",lb:"Analyse Spearman"},
+    {id:"simulation", ic:"chart", lb:"Simulateur d'Impact"}, // <-- LIGNE AJOUTÉE
     {id:"os2",     ic:"wave",lb:"Variabilite CWT"},
     {id:"os3",     ic:"phase",lb:"Relations de phase"},
     {id:"alertes", ic:"bell",lb:"Alertes"},
@@ -822,16 +823,16 @@ function sAuth(){
 function sDashboard(){
   const items=[
     {sc:"import",t:"Import des donnees",d:"Charger les 4 fichiers Excel",b:"NEW",c:"bg"},
-    {sc:"etccdi",t:"Calcul ETCCDI",d:"16 indices automatiques",b:"CALC",c:"bo"},
+    {sc:"etccdi",t:"Calcul ETCCDI",b:"CALC",c:"bo"},
     {sc:"debits",t:"Percentiles des debits",d:"Q5, Q10, Q50, Q90, Q95 annuels",b:"Q",c:"bb"},
     {sc:"spearman",t:"Analyse Spearman",d:"Fusion + Correlation + Heatmap",b:"OS1",c:"bp"},
+    {sc:"simulation",t:"Simulateur d'Influence",d:"Innovation : Étude de sensibilité",b:"HOT",c:"br"}, // <-- LIGNE AJOUTÉE
     {sc:"os2",t:"Variabilite CWT",d:"Scalogrammes en ondelettes",b:"OS2",c:"bg"},
     {sc:"os3",t:"Relations de phase",d:"XWT + WTC + Coherence",b:"OS3",c:"bb"},
     {sc:"alertes",t:"Alertes hydroclimatiques",d:"Surveillance des seuils",b:"!",c:"br"},
   ];
   return`${hdr("Tableau de bord",S.user?.nom)}<div class="content"><div class="card stat-card"><div class="slbl">Bassin surveille</div><div class="sval">Oueme a Bonou</div><div class="sdtl">Benin · 1991–2020</div></div>${items.map(it=>`<div class="menu-item" onclick="setState({screen:'${it.sc}'})"><div class="card"><div class="menu-row"><div><div class="menu-title">${it.t}</div><div class="menu-desc">${it.d}</div></div><span class="badge ${it.c}">${it.b}</span></div></div></div>`).join("")}</div>${drw()}`;
 }
-
 function sImport(){
   const CFG={
     precip:{l:"Precipitations (25 stations)",u:"mm"},
@@ -953,7 +954,7 @@ function sSpearman(){
     heatHtml+=`<div class="card"><div class="card-title">Indices retenus (finaux)</div><div class="card-sub">Significatifs + multicolinearite filtree</div><div style="font-size:12px;color:#e8f4f0;line-height:1.8;">${indicesFinal.length?indicesFinal.join(", "):"Aucun indice retenu."}</div></div>`;
   }
 
-  return`${hdr("Analyse Spearman","Correlation + Heatmap",true)}<div class="content">
+  return`${hdr("Analyse Spearman",true)}<div class="content">
     <div class="card">
       <div class="card-title">Source des donnees</div>
       <div style="display:flex;flex-direction:column;gap:6px;">
@@ -1248,52 +1249,51 @@ function drawXWTWTCCard(canvasId,res,t,mode){
   const ctx=cvs.getContext("2d");
   const W=cvs.width,H=cvs.height;
   ctx.clearRect(0,0,W,H);
-  const m=axisMargins(W,H);const{pX,pY,pW,pH}=m;
   const nT=t.length,nS=res.period.length;
   const periodLog=res.period.map(p=>Math.log2(p));
   const pMin=Math.min(...periodLog),pMax=Math.max(...periodLog);
   const grid=mode==="xwt"?res.xwtPow:res.wtcR2;
   const sigGrid=mode==="xwt"?res.xwtSig:res.wtcSig95;
   const maxVal=mode==="xwt"?Math.max(...grid.flat()):1;
-  const img=ctx.createImageData(pW,pH);
-  for(let py=0;py<pH;py++){
-    const plog=pMin+(py/(pH-1))*(pMax-pMin);
+  const img=ctx.createImageData(W,H);
+  for(let py=0;py<H;py++){
+    const plog=pMin+(py/(H-1))*(pMax-pMin);
     let a0=0;while(a0<nS-2&&periodLog[a0+1]<plog)a0++;
     const a1=Math.min(a0+1,nS-1);
     const span=periodLog[a1]-periodLog[a0];
     const fa=span>0?Math.max(0,Math.min(1,(plog-periodLog[a0])/span)):0;
-    for(let px=0;px<pW;px++){
-      const tiCont=(px/(pW-1))*(nT-1);
+    for(let px=0;px<W;px++){
+      const tiCont=(px/(W-1))*(nT-1);
       const t0=Math.floor(tiCont),t1=Math.min(t0+1,nT-1),ft=tiCont-t0;
       const v00=grid[a0][t0],v01=grid[a0][t1],v10=grid[a1][t0],v11=grid[a1][t1];
       const vTop=v00+(v01-v00)*ft,vBot=v10+(v11-v10)*ft;
       const val=(vTop+(vBot-vTop)*fa)/(maxVal||1);
       const[cr,cg,cb]=CWT_COLORMAP(val);
-      const idx=(py*pW+px)*4;
+      const idx=(py*W+px)*4;
       img.data[idx]=cr;img.data[idx+1]=cg;img.data[idx+2]=cb;img.data[idx+3]=255;
     }
   }
-  ctx.putImageData(img,pX,pY);
+  ctx.putImageData(img,0,0);
   // COI
   ctx.save();ctx.globalAlpha=0.45;ctx.fillStyle="#0d1b2a";ctx.beginPath();
-  for(let px=0;px<pW;px++){
-    const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
+  for(let px=0;px<W;px++){
+    const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
     let coiLog=Math.log2(Math.max(res.coi[ti],1e-5));
     coiLog=Math.max(pMin,Math.min(pMax,coiLog));
-    const py=pY+((coiLog-pMin)/(pMax-pMin))*pH;
-    if(px===0)ctx.moveTo(pX+px,py);else ctx.lineTo(pX+px,py);
+    const py=((coiLog-pMin)/(pMax-pMin))*(H-1);
+    if(px===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
   }
-  ctx.lineTo(pX+pW,pY);ctx.lineTo(pX,pY);ctx.closePath();ctx.fill();ctx.restore();
+  ctx.lineTo(W,0);ctx.lineTo(0,0);ctx.closePath();ctx.fill();ctx.restore();
   // contour significativite
   ctx.save();ctx.strokeStyle="#111";ctx.lineWidth=1.3;ctx.beginPath();
-  for(let py=0;py<pH;py++){
-    const plog=pMin+(py/(pH-1))*(pMax-pMin);
+  for(let py=0;py<H;py++){
+    const plog=pMin+(py/(H-1))*(pMax-pMin);
     let a=0;while(a<nS-1&&periodLog[a+1]<plog)a++;
     let prevSig=null;
-    for(let px=0;px<pW;px++){
-      const ti=Math.min(nT-1,Math.floor((px/(pW-1))*(nT-1)));
+    for(let px=0;px<W;px++){
+      const ti=Math.min(nT-1,Math.floor((px/(W-1))*(nT-1)));
       const sig=grid[a][ti]>=sigGrid[a];
-      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(pX+px,pY+py);ctx.lineTo(pX+px,pY+py+1);}
+      if(prevSig!==null&&sig!==prevSig){ctx.moveTo(px,py);ctx.lineTo(px,py+1);}
       prevSig=sig;
     }
   }
@@ -1301,13 +1301,13 @@ function drawXWTWTCCard(canvasId,res,t,mode){
   // fleches de phase (grille eparse, noires si dans le COI, grises sinon)
   if(res.xwtPhase){
     const nx=Math.min(14,nT),ny=Math.min(9,nS);
-    const arrowLen=Math.min(pW/nx,pH/ny)*0.38;
+    const arrowLen=Math.min(W/nx,H/ny)*0.38;
     for(let iy=0;iy<ny;iy++){
       const plog=pMin+((iy+0.5)/ny)*(pMax-pMin);
       let a=0;while(a<nS-2&&periodLog[a+1]<plog)a++;
       for(let ix=0;ix<nx;ix++){
         const ti=Math.min(nT-1,Math.round(((ix+0.5)/nx)*(nT-1)));
-        const px=pX+((ix+0.5)/nx)*pW,py=pY+((iy+0.5)/ny)*pH;
+        const px=((ix+0.5)/nx)*W,py=((iy+0.5)/ny)*H;
         const phase=res.xwtPhase[a][ti];
         let coiLog=Math.log2(Math.max(res.coi[ti],1e-5));
         const reliable=periodLog[a]<=coiLog;
@@ -1322,8 +1322,6 @@ function drawXWTWTCCard(canvasId,res,t,mode){
       }
     }
   }
-  const periodTicks=[2,4,8,16].filter(pv=>Math.log2(pv)>=pMin-0.3&&Math.log2(pv)<=pMax+0.3);
-  drawAxes(ctx,m,W,H,t,periodTicks,pMin,pMax);
 }
 function drawAllXWTWTC(){
   if(!S.xwtwtcResults||S.screen!=="os3")return;
@@ -1732,19 +1730,335 @@ function attachEvents(){
     if(el)el.onclick=()=>setState({spearmanQcrue:q});
   });
 }
+function sSimulation() {
+  const sr = S.spearmanResults;
+  if(!sr) return `${hdr("Simulation d'Impact",null,true)}<div class="content"><div class="alert alert-info">Effectuez l'analyse Spearman d'abord pour calibrer le modèle.</div></div>`;
 
-// ---- RENDER ----
-const SCR={
-  accueil:sAccueil,auth:sAuth,dashboard:sDashboard,
-  import:sImport,etccdi:sETCCDI,debits:sDebits,
-  spearman:sSpearman,os2:sOS2,os3:sOS3,
-  alertes:sAlertes,profil:sProfil,
+  const indices = sr.indicesFinal;
+  const debits = sr.debits;
+  
+  return `${hdr("Simulateur d'Influence","Innovation : Aide à la décision",true)}
+    <div class="content">
+      
+      <!-- 1. BLOC ENTRÉES : SCÉNARIOS -->
+      <div class="card" style="border-left:4px solid #4ecba0; margin-bottom:16px;">
+        <div class="card-title">Scénarios de Changement</div>
+        <div class="card-sub">Simulez une variation des indices (%) pour voir la réponse du fleuve</div>
+        ${indices.map(idx => `
+          <div class="input-group" style="margin-top:12px; background:rgba(255,255,255,0.02); padding:10px; border-radius:8px;">
+            <label style="display:flex; justify-content:space-between; margin-bottom:8px;">
+              <span style="font-size:12px; font-weight:700; color:#fff;">${idx}</span>
+              <span id="val-${idx}" style="color:#4ecba0; font-weight:800; font-size:12px;">0%</span>
+            </label>
+            <input type="range" min="-50" max="50" value="0" step="5" style="width:100%; height:4px; cursor:pointer;" oninput="updateSim('${idx}', this.value)">
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- 2. BLOC RÉSULTATS : IMPACTS % -->
+      <div class="section-label">Réponse hydrologique estimée</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+        ${debits.map(d => `
+          <div class="card stat-card" style="padding:12px 8px; text-align:center; margin-bottom:0; background: #162a3d; border: 1px solid #234055;">
+            <div style="font-size:10px; color:#8ab5a5; font-weight:700;">${d}</div>
+            <div id="sim-res-${d}" style="font-size:18px; font-weight:800; color:#fff; margin-top:4px;">0.0 %</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- 3. BLOC INNOVATION : JAUGE ET ANALOGIE -->
+      <div class="card" style="text-align:center; background:rgba(78,203,160,0.05); border: 1px solid rgba(78,203,160,0.2); margin-bottom:16px;">
+          <div class="card-title" style="font-size:10px; color:#8ab5a5; text-transform:uppercase; letter-spacing:1px;">Indice de Vulnérabilité du Bassin</div>
+          <div id="vulnerability-gauge" style="font-size:22px; font-weight:900; color:#4ecba0; margin-top:5px;">STABLE</div>
+          
+          <div id="analogy-box" style="font-size:11px; color:#e0a060; margin-top:12px; display:none; padding:10px; border:1px dashed rgba(224,160,96,0.5); border-radius:8px; background:rgba(224,160,96,0.03);">
+             <!-- L'analogie historique s'affichera ici -->
+          </div>
+      </div>
+
+      <!-- 4. BLOC INTELLIGENCE MÉTIER : DIAGNOSTIC & DIRECTIVES -->
+      <div id="expert-panel" class="card" style="background:rgba(78,203,160,0.03); border:1px solid rgba(78,203,160,0.3); border-radius:12px; margin-bottom:16px;">
+          
+          <!-- Diagnostic -->
+          <div style="margin-bottom:15px;">
+              <div class="card-title" style="color:#4ecba0; font-size:11px; letter-spacing:0.05em; text-transform:uppercase; display:flex; align-items:center; gap:10px;">
+                <span style="font-size:16px;">🔎</span> DIAGNOSTIC DES PROCESSUS
+              </div>
+              <div id="interpretation-text" style="font-size:12px; color:#c0d8d0; line-height:1.6; padding:10px 0 0 26px; border-left:1px solid rgba(78,203,160,0.1); margin-left:8px;">
+                 Veuillez appliquer un forçage climatique pour générer l'analyse...
+              </div>
+          </div>
+          
+          <div style="height:1px; background:rgba(78,203,160,0.1); margin:15px 0;"></div>
+
+          <!-- Stratégie -->
+          <div>
+              <div class="card-title" style="color:#e0a060; font-size:11px; letter-spacing:0.05em; text-transform:uppercase; display:flex; align-items:center; gap:10px;">
+                <span style="font-size:16px;">🧭</span> DIRECTIVES DE GESTION
+              </div>
+              <div id="advice-text" style="font-size:12px; color:#e8f4f0; line-height:1.6; padding:10px 0 0 26px; border-left:1px solid rgba(224,160,96,0.1); margin-left:8px;">
+                 En attente de simulation...
+              </div>
+          </div>
+      </div>
+
+      <!-- 5. ACTION : BOUTON PDF -->
+      <button class="btn-primary" style="margin-bottom:30px; background:linear-gradient(135deg,#4a9fe0,#357abd); border:none; box-shadow: 0 4px 15px rgba(0,0,0,0.2);" onclick="generatePDF()">
+         📥 Générer la Note de Synthèse (PDF)
+      </button>
+
+      ${drw()}
+    </div>`;
+}// ---- RENDER ----
+const SCR = {
+  accueil: sAccueil,
+  auth: sAuth,
+  dashboard: sDashboard,
+  import: sImport,
+  etccdi: sETCCDI,
+  debits: sDebits,
+  spearman: sSpearman,
+  os2: sOS2,
+  os3: sOS3,
+  alertes: sAlertes,
+  profil: sProfil,
+  simulation: sSimulation, // Bien vérifier la virgule ici
 };
-function render(){
-  document.getElementById("app").innerHTML=(SCR[S.screen]||sAccueil)();
+
+function render() {
+  const app = document.getElementById("app");
+  if(app) app.innerHTML = (SCR[S.screen] || sAccueil)();
   attachEvents();
-  if(S.screen==="os2")setTimeout(drawAllCWT,0);
-  if(S.screen==="os3")setTimeout(drawAllXWTWTC,0);
+  if(S.screen === "os2") setTimeout(drawAllCWT, 0);
+  if(S.screen === "os3") setTimeout(drawAllXWTWTC, 0);
+}
+function updateSim(idx, val) {
+    // 1. Mise à jour de l'affichage du pourcentage sur le curseur
+    const elVal = document.getElementById(`val-${idx}`);
+    if(elVal) elVal.textContent = (val > 0 ? "+" : "") + val + "%";
+    
+    const sr = S.spearmanResults;
+    if(!sr) return;
+
+    let resValues = {};
+    let contributions = {}; 
+    let currentScenario = {};
+
+    // 2. CALCUL DES IMPACTS ET IDENTIFICATION DES MOTEURS (DRIVERS)
+    sr.debits.forEach(debitName => {
+        let totalImpact = 0;
+        let maxContrib = { name: "", val: 0 };
+
+        sr.indicesFinal.forEach(id => {
+            const slider = document.querySelector(`input[oninput*="'${id}'"]`);
+            if(slider) {
+                const v = parseFloat(slider.value);
+                currentScenario[id] = v; // Stockage pour l'analogie
+                const rho = (sr.mat[id] && sr.mat[id][debitName]) ? sr.mat[id][debitName].rho : 0;
+                const contrib = v * rho;
+                totalImpact += contrib;
+                if(Math.abs(contrib) > Math.abs(maxContrib.val)) {
+                    maxContrib = { name: id, val: contrib };
+                }
+            }
+        });
+
+        // Mise à jour des chiffres en % dans les cartes bleues
+        const resDisplay = document.getElementById(`sim-res-${debitName}`);
+        if(resDisplay) {
+            resDisplay.textContent = (totalImpact > 0 ? "+" : "") + totalImpact.toFixed(1) + " %";
+            resDisplay.style.color = totalImpact >= 0 ? "#4ecba0" : "#e06060";
+        }
+        resValues[debitName] = totalImpact;
+        contributions[debitName] = maxContrib;
+    });
+
+    // 3. MISE À JOUR DE LA JAUGE DE VULNÉRABILITÉ
+    const gauge = document.getElementById('vulnerability-gauge');
+    const nameEtiage = sr.debits[0]; 
+    const nameCrue   = sr.debits[sr.debits.length - 1]; 
+    
+    // On calcule le risque cumulé (Crue ou Sécheresse)
+    const riskScore = Math.max(Math.abs(resValues[nameCrue]), Math.abs(resValues[nameEtiage]));
+    
+    if(riskScore > 25) {
+        gauge.textContent = "CRITIQUE";
+        gauge.style.color = "#e06060";
+    } else if(riskScore > 10) {
+        gauge.textContent = "MODÉRÉE";
+        gauge.style.color = "#e0a060";
+    } else {
+        gauge.textContent = "STABLE";
+        gauge.style.color = "#4ecba0";
+    }
+
+    // 4. ANALOGIE HISTORIQUE
+    const analogyDiv = document.getElementById('analogy-box');
+    let match = "";
+    if(currentScenario["Rx5day"] > 20 || currentScenario["PRCPTOT"] > 20) {
+        match = "⭐ <strong>Analogie :</strong> Ce scénario (forte pluviosité) rappelle l'année <strong>2010 (Inondations)</strong>.";
+    } else if(currentScenario["CDD"] > 20 || currentScenario["CSDI"] > 15) {
+        match = "⭐ <strong>Analogie :</strong> Ce scénario (sécheresse/froid) est proche de l'année <strong>2015 (Sécheresse Sévère)</strong>.";
+    }
+    
+    if(match !== "") {
+        analogyDiv.style.display = 'block';
+        analogyDiv.innerHTML = match;
+    } else {
+        analogyDiv.style.display = 'none';
+    }
+
+    // 5. DIAGNOSTIC ET DIRECTIVES (TEXTES)
+    const interpDiv = document.getElementById('interpretation-text');
+    const adviceDiv = document.getElementById('advice-text');
+    let interp = [];
+    let recom = [];
+
+    sr.debits.forEach(dName => {
+        const v = resValues[dName];
+        const driver = contributions[dName].name;
+        if (Math.abs(v) > 3) {
+            if (dName === "Q95" || dName === "Q90") {
+                interp.push(`Les <strong>Hautes Eaux (${dName})</strong> sont impactées par <strong>${driver}</strong> (+${v.toFixed(1)}%).`);
+                if (v > 15) recom.push("🚩 <strong>ALERTE :</strong> Risque de crue. Surveiller l'exutoire de Bonou.");
+            }
+            if (dName === "Q5" || dName === "Q10") {
+                interp.push(`Le <strong>Régime d'Étiage (${dName})</strong> est affaibli par <strong>${driver}</strong> (${v.toFixed(1)}%).`);
+                if (v < -10) recom.push("🚜 <strong>ALERTE :</strong> Stress hydrique. Planifier la gestion des pompages.");
+            }
+        }
+    });
+
+    if(interp.length === 0) interp.push("Forçages trop faibles pour modifier la signature du bassin.");
+    if(recom.length === 0) recom.push("Poursuivre le monitoring standard.");
+
+    interpDiv.innerHTML = interp.join("<br>");
+    adviceDiv.innerHTML = recom.join("<br>");
+}function generatePDF() {
+    const sr = S.spearmanResults;
+    if(!sr) return alert("Veuillez effectuer l'analyse Spearman d'abord.");
+
+    const dateStr = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    
+    // 1. Récupération des données du scénario
+    let scenariosHTML = "";
+    sr.indicesFinal.forEach(id => {
+        const val = document.getElementById(`val-${id}`)?.textContent || "0%";
+        if(val !== "0%") {
+            scenariosHTML += `<tr><td style="padding:8px; border-bottom:1px solid #eee;">${id}</td><td style="padding:8px; border-bottom:1px solid #eee; text-align:right; font-weight:bold; color:#0f6e56;">${val}</td></tr>`;
+        }
+    });
+
+    // 2. Récupération des impacts (cartes)
+    let impactsHTML = "";
+    sr.debits.forEach(d => {
+        const val = document.getElementById(`sim-res-${d}`)?.textContent || "0.0 %";
+        impactsHTML += `
+            <td style="width:33%; padding:15px; border:1px solid #0f6e56; background:#f4faf7; text-align:center; border-radius:10px;">
+                <div style="font-size:10pt; color:#444; font-weight:bold; margin-bottom:5px;">${d}</div>
+                <div style="font-size:18pt; font-weight:900; color:#0f6e56;">${val}</div>
+            </td>`;
+    });
+
+    // --- AJOUT INNOVATION : JAUGE ET ANALOGIE ---
+    const gaugeEl = document.getElementById('vulnerability-gauge');
+    const gaugeText = gaugeEl ? gaugeEl.textContent : "STABLE";
+    const gaugeColor = gaugeEl ? window.getComputedStyle(gaugeEl).color : "#4ecba0";
+    
+    const analogyEl = document.getElementById('analogy-box');
+    const hasAnalogy = analogyEl && analogyEl.style.display !== 'none';
+    const analogyHTML = hasAnalogy ? 
+        `<div style="margin-top:10px; padding:12px; border:2px dashed #e0a060; background:#fffbf5; border-radius:8px; color:#c47a1b; font-size:11pt; font-weight:bold; text-align:center;">
+            ${analogyEl.innerHTML}
+        </div>` : "";
+
+    const interp = document.getElementById('interpretation-text').innerHTML;
+    const advice = document.getElementById('advice-text').innerHTML;
+
+    // 3. Création du contenu du rapport
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>Rapport HydroClim - ${dateStr}</title>
+            <style>
+                body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; background: white; }
+                .header { border-bottom: 3px solid #0f6e56; padding-bottom: 15px; margin-bottom: 30px; }
+                .title { color: #0f6e56; font-size: 26pt; margin: 0; font-weight: 800; }
+                .subtitle { color: #666; font-size: 14pt; margin: 5px 0; }
+                .meta-table { width: 100%; margin-bottom: 40px; font-size: 11pt; }
+                .section-title { background: #0f6e56; color: white; padding: 8px 15px; font-size: 13pt; font-weight: bold; border-radius: 5px; margin-top: 30px; }
+                .content-box { padding: 15px; border: 1px solid #eee; background: #fdfdfd; margin-top: 10px; text-align: justify; }
+                table { width: 100%; border-collapse: collapse; }
+                @media print { 
+                    button { display: none; }
+                    body { padding: 20px; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <table width="100%">
+                    <tr>
+                        <td>
+                            <h1 class="title">HYDROCLIM ANALYZER</h1>
+                            <p class="subtitle">Note de Synthèse Décisionnelle</p>
+                        </td>
+                        <td style="text-align:right; font-size:10pt; color:#888;">
+                            RÉPUBLIQUE DU BÉNIN<br>UNSTIM / ENSGMM / MSN
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <table class="meta-table">
+                <tr>
+                    <td><strong>INGÉNIEUR :</strong> C. VODOUNOU</td>
+                    <td style="text-align:right;"><strong>SUPERVISEUR :</strong> Dr.(MC) I.E. BIAO</td>
+                </tr>
+                <tr>
+                    <td><strong>BASSIN :</strong> Ouémé (Exutoire de Bonou)</td>
+                    <td style="text-align:right;"><strong>DATE :</strong> ${dateStr}</td>
+                </tr>
+            </table>
+
+            <div class="section-title">1. CONFIGURATION DU SCÉNARIO CLIMATIQUE</div>
+            <table style="margin-top:10px;">
+                ${scenariosHTML || "<tr><td>Aucune variation forcée appliquée.</td></tr>"}
+            </table>
+
+            <div class="section-title">2. RÉPONSE HYDROLOGIQUE SIMULÉE</div>
+            <table style="margin-top:15px; width:100%;">
+                <tr>${impactsHTML}</tr>
+            </table>
+
+            <!-- INSERTION DE L'ÉVALUATION DE LA VULNÉRABILITÉ -->
+            <div style="margin-top:20px; padding:20px; border:1px solid #eee; border-radius:10px; text-align:center;">
+                <div style="font-size:10pt; color:#777; text-transform:uppercase; letter-spacing:1px;">Indice de Vulnérabilité Global</div>
+                <div style="font-size:28pt; font-weight:900; color:${gaugeColor}; margin:10px 0;">${gaugeText}</div>
+                ${analogyHTML}
+            </div>
+
+            <div class="section-title">3. DIAGNOSTIC SCIENTIFIQUE DES PROCESSUS</div>
+            <div class="content-box">${interp}</div>
+
+            <div class="section-title" style="background:#e0a060;">4. DIRECTIVES DE GESTION PRÉCONISÉES</div>
+            <div class="content-box" style="border-left:5px solid #e0a060;">${advice}</div>
+
+            <div style="margin-top:80px; text-align:center; font-size:9pt; color:#aaa; border-top:1px solid #eee; padding-top:15px;">
+                Rapport d'expertise généré par HydroClim Analyzer v1.0 <br>
+                Outil d'Aide à la Décision pour la résilience climatique
+            </div>
+
+            <div style="text-align:center; margin-top:30px;">
+                <button onclick="window.print()" style="padding:10px 20px; background:#0f6e56; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">
+                    🖨️ Enregistrer en PDF
+                </button>
+            </div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
 }
 render();
 </script>
