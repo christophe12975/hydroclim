@@ -1704,7 +1704,7 @@ function drw(){
 }
 // ---- ÉCRANS ----
 function sAccueil(){
-  return`${hdr("HydroClim Analyzer","Bassin versant de l'Oueme - Benin")}<div class="content"><div style="text-align:center;padding:24px 0;"><div style="font-size:60px;margin-bottom:12px;">💧</div><div style="font-size:22px;font-weight:800;color:#fff;">HydroClim</div><div style="font-size:13px;color:#6a9080;margin-top:6px;line-height:1.7;">Analyse des extremes climatiques<br>et des debits · Ouémé à Bonou<br><span style="color:#4ecba0;">Benin · 1991–2020</span></div></div><div class="card" style="background:linear-gradient(135deg,#0f3b2e,#0d2235);border:none;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;"><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">25</div><div style="color:#6a9080;font-size:11px;">Stations</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">16</div><div style="color:#6a9080;font-size:11px;">Indices</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">30</div><div style="color:#6a9080;font-size:11px;">Années</div></div></div></div><button class="btn-primary" onclick="setState({screen:'auth'})">Connexion / Inscription</button><div style="text-align:center;font-size:10px;color:#3a5a4a;margin-top:6px;">ENSGMM/UNSTIM Abomey · 2026</div></div>`;
+  return`${hdr("HydroClim Analyzer","Bassin versant de l'Oueme - Benin")}<div class="content"><div style="text-align:center;padding:24px 0;"><div style="font-size:60px;margin-bottom:12px;">💧</div><div style="font-size:22px;font-weight:800;color:#fff;">HydroClim</div><div style="font-size:13px;color:#6a9080;margin-top:6px;line-height:1.7;">Analyse des extremes climatiques<br>et des débits · Ouémé à Bonou<br><span style="color:#4ecba0;">Benin · 1991–2020</span></div></div><div class="card" style="background:linear-gradient(135deg,#0f3b2e,#0d2235);border:none;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center;"><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">25</div><div style="color:#6a9080;font-size:11px;">Stations</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">16</div><div style="color:#6a9080;font-size:11px;">Indices</div></div><div><div style="color:#4ecba0;font-size:22px;font-weight:800;">30</div><div style="color:#6a9080;font-size:11px;">Années</div></div></div></div><button class="btn-primary" onclick="setState({screen:'auth'})">Connexion / Inscription</button><div style="text-align:center;font-size:10px;color:#3a5a4a;margin-top:6px;">HydroClim Analyzer v1.0 · 2026</div></div>`;
 }
 
 function sAuth(){
@@ -1780,7 +1780,7 @@ function sImport(){
     precip:{l:"Précipitations (25 stations)",u:"mm"},
     tmax:{l:"Températures max Tmax (4 stations)",u:"°C"},
     tmin:{l:"Températures min Tmin (4 stations)",u:"°C"},
-    debit:{l:"Débits journaliers (Bonou)",u:"m3/s"},
+    debit:{l:"Débits journaliers (Bonou)",u:"m³/s"},
   };
 
   // Progression basée uniquement sur les 4 fichiers de données
@@ -1865,8 +1865,8 @@ function sDebits(){
   const r=S.debitResults;
   let preview="",stats="";
   if(r){
-    preview=`<div class="card"><div class="card-title">Résultats annuels (m**3/s)</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Année","Q5","Q10","Q50","Q90","Q95"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${r.annees.map((an,i)=>`<tr><td class="hl">${an}</td>${["Q5","Q10","Q50","Q90","Q95"].map(k=>`<td>${r[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
-    stats=`<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">${[["Q5","#4a9fe0"],["Q50","#4ecba0"],["Q95","#e06060"]].map(([k,c])=>{const v=r[k].filter(x=>x!==null);const m=v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"-";return`<div style="background:#0d2235;padding:10px;border-radius:8px;text-align:center;"><div style="font-size:10px;color:#6a9080;">${k}</div><div style="font-weight:800;color:${c};font-size:18px;">${m}</div><div style="font-size:9px;color:#4a6a5a;">m**3/s moy.</div></div>`;}).join("")}</div></div>`;
+    preview=`<div class="card"><div class="card-title">Résultats annuels (m³/s)</div><div style="overflow-x:auto;"><table class="dt-table"><thead><tr>${["Année","Q5","Q10","Q50","Q90","Q95"].map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${r.annees.map((an,i)=>`<tr><td class="hl">${an}</td>${["Q5","Q10","Q50","Q90","Q95"].map(k=>`<td>${r[k][i]??"-"}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
+    stats=`<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">${[["Q5","#4a9fe0"],["Q50","#4ecba0"],["Q95","#e06060"]].map(([k,c])=>{const v=r[k].filter(x=>x!==null);const m=v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"-";return`<div style="background:#0d2235;padding:10px;border-radius:8px;text-align:center;"><div style="font-size:10px;color:#6a9080;">${k}</div><div style="font-weight:800;color:${c};font-size:18px;">${m}</div><div style="font-size:9px;color:#4a6a5a;">m³/s moy.</div></div>`;}).join("")}</div></div>`;
   }
   return`${hdr("Percentiles des débits","Q5, Q10, Q50, Q90, Q95 annuels",true)}<div class="content"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#0d2235;border-radius:8px;"><span style="font-size:12px;color:#8ab5a5;">Débits journaliers (Bonou)</span><span style="font-weight:700;font-size:11px;color:${S.importData.debit?"#4ecba0":"#e06060"};">${S.importData.debit?"Charge":"Manquant"}</span></div></div>${!r?'<div class="alert alert-info">Chargez le fichier debits dans Import.</div>':""}${preview}${stats}${r?'<button class="btn-secondary" onclick="expDebits()">Exportez les percentiles (Excel)</button>':""}</div> `;
 }
@@ -1947,7 +1947,7 @@ function sSpearman(){
     heatHtml+=`<div class="card"><div class="card-title">Indices retenus (finaux)</div><div class="card-sub">Significatifs + multicolinearité filtrée</div><div style="font-size:12px;color:#e8f4f0;line-height:1.8;">${indicesFinal.length?indicesFinal.join(", "):"Aucun indice retenu."}</div></div>`;
   }
 
-  return`${hdr("Analyse Spearman","Oui")}<div class="content">
+  return`${hdr("Analyse Spearman","Corrélation de Spearman")}<div class="content">
     <div class="card">
       <div class="card-title">Source des donnees</div>
       <div style="display:flex;flex-direction:column;gap:6px;">
@@ -2494,14 +2494,80 @@ function sOS3(){
   return`${hdr("Relations de phase","XWT & Coherence",true)}<div class="content">${body}</div>${zoomOverlay} `;
 }
 function sAlertes(){
-  const r=S.debitResults;
-  let body='<div class="alert alert-info">Calculez les percentiles de débits pour voir les alertes.</div>';
-  if(r){
-    const i=r.annees.length-1,an=r.annees[i];
-    const q95=r.Q95[i],q5=r.Q5[i],q50=r.Q50[i];
-    body=`<div class="card"><div class="card-title">Alertes — ${an}</div>${q95>500?'<div class="alert alert-error">Q95 = '+q95+' m**3/s — Risque crue eleve</div>':''}${q5<5?'<div class="alert alert-error">Q5 = '+q5+' m**3/s — Risque etiage severe</div>':''}<div style="font-size:12px;color:#8ab5a5;">Q5=${q5} · Q50=${q50} · Q95=${q95}</div></div>`;
+  const base = fusionnerBase(); 
+  if(!base || base.length === 0) return `${hdr("Diagnostic des Extrêmes",null,true)}<div class="content"><div class="alert alert-info">Calculez les indices ETCCDI pour générer le diagnostic.</div></div>`;
+
+  // 1. DÉTECTION AUTOMATIQUE DE LA COLONNE ANNÉE
+  // On prend la première clé de l'objet (souvent 'Annee')
+  const yearKey = Object.keys(base[0])[0];
+
+  // 2. IDENTIFICATION DES ANNÉES RECORDS (Basé sur PRCPTOT)
+  // On s'assure que PRCPTOT est bien un nombre pour le tri
+  const sortedByRain = [...base].sort((a, b) => parseNum(b.PRCPTOT) - parseNum(a.PRCPTOT));
+  
+  const wetYearData = sortedByRain[0]; // La plus pluvieuse
+  const dryYearData = sortedByRain[sortedByRain.length - 1]; // La plus sèche
+
+  function renderYearCard(data, type) {
+      const isWet = type === 'wet';
+      const color = isWet ? '#4ecba0' : '#e0a060';
+      const title = isWet ? 'ANNÉE DE RÉFÉRENCE : CRUE' : 'ANNÉE DE RÉFÉRENCE : ÉTIAGE';
+      const icon = isWet ? '🌊' : '🏜️';
+      
+      // On récupère l'année de manière dynamique
+      const yearValue = data[yearKey] || "N/A";
+
+      return `
+        <div class="card" style="border-top: 4px solid ${color}; background: #1a2f42;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div class="card-title" style="margin:0; color:${color}; font-size:11px;">${icon} ${title}</div>
+                <div style="font-size:22px; font-weight:900; color:#fff;">${yearValue}</div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div style="background:rgba(13,27,42,0.5); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size:9px; color:#8ab5a5;">PLUIE TOTALE</div>
+                    <div style="font-size:15px; font-weight:800; color:#fff;">${parseNum(data.PRCPTOT).toFixed(1)} mm</div>
+                </div>
+                <div style="background:rgba(13,27,42,0.5); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size:9px; color:#8ab5a5;">INTENSITÉ (Rx5j)</div>
+                    <div style="font-size:15px; font-weight:800; color:#fff;">${parseNum(data.Rx5day).toFixed(1)} mm</div>
+                </div>
+                <div style="background:rgba(13,27,42,0.5); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size:9px; color:#8ab5a5;">SÉCHERESSE (CDD)</div>
+                    <div style="font-size:15px; font-weight:800; color:#fff;">${parseNum(data.CDD).toFixed(0)} j</div>
+                </div>
+                <div style="background:rgba(13,27,42,0.5); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-size:9px; color:#8ab5a5;">CHALEUR (TX90p)</div>
+                    <div style="font-size:15px; font-weight:800; color:#fff;">${parseNum(data.TX90p).toFixed(1)} %</div>
+                </div>
+            </div>
+        </div>
+      `;
   }
-  return`${hdr("Alertes hydroclimatiques","Surveillance des seuils",true)}<div class="content">${body}</div> `;
+
+  return `
+    ${hdr("Diagnostic des Extrêmes", "Mise en évidence des signatures de rupture", true)}
+    <div class="content">
+        <div class="ib" style="margin-bottom:20px; border-color: #4ecba0;">
+            <strong>Diagnostic du bassin :</strong> Caractérisation des scénarios historiques critiques (excédentaires et déficitaires).
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+            ${renderYearCard(wetYearData, 'wet')}
+            ${renderYearCard(dryYearData, 'dry')}
+        </div>
+
+        <div class="card" style="margin-top:15px; border-left:5px solid #4ecba0; background:rgba(78,203,160,0.02);">
+            <div class="card-title">💡 Conclusion du Diagnostic</div>
+            <div style="font-size:13px; line-height:1.7; color:#e8f4f0;">
+                Le bassin a connu son risque maximal d'inondation en <strong>${wetYearData[yearKey]}</strong> avec un cumul de ${parseNum(wetYearData.PRCPTOT).toFixed(0)} mm. <br>
+                À l'inverse, l'année <strong>${dryYearData[yearKey]}</strong> marque le plancher historique de la ressource en eau. <br><br>
+                <em>Écart de variabilité : l'intensité des pluies extrêmes a varié de <strong>${(parseNum(wetYearData.Rx5day) - parseNum(dryYearData.Rx5day)).toFixed(1)} mm</strong> entre ces deux dates.</em>
+            </div>
+        </div>
+    </div>
+  `;
 }
 function sProfil(){
   const avatarSrc = S.user?.avatar_url;
@@ -2930,7 +2996,7 @@ function attachEvents() {
 }
 function sSimulation() {
   const sr = S.spearmanResults;
-  if(!sr) return `${hdr("Simulation d'Impact","Non")}<div class="content"><div class="alert alert-info">Effectuez l'analyse Spearman d'abord pour calibrer le modèle.</div></div>`;
+  if(!sr) return `${hdr("Simulation d'Impact","Scénarios")}<div class="content"><div class="alert alert-info">Effectuez l'analyse Spearman d'abord pour calibrer le modèle.</div></div>`;
 
   const indices = sr.indicesFinal;
   const debits = sr.debits;
