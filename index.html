@@ -1562,6 +1562,7 @@ function computeCWT(signal){
 
 
 function xlsMeta(){
+  const maintenant = new Date();
   return[
     ["Logiciel","HydroClim Analyzer"],
     ["Version","1.0"],
@@ -1569,10 +1570,12 @@ function xlsMeta(){
     ["Institution","ENSGMM/UNSTIM Abomey - Benin"],
     ["Bassin","Ouémé à Bonou"],
     ["Période","1991-2020"],
-    ["Encadrant","Dr. Iboukoun Eliezer BIAO"],
-    ["Date export",new Date().toLocaleDateString("fr-FR")],
+    ["Encadrant","Dr.(MC) Iboukoun Eliezer BIAO"],
+    ["Date export", maintenant.toLocaleDateString("fr-FR", { dateStyle: "full" })],
+    ["Heure export", maintenant.toLocaleTimeString("fr-FR")]
   ];
 }
+
 function xlsStats(data){
   const cols=Object.keys(data[0]).filter(c=>!c.toLowerCase().includes("date")&&c!=="Station"&&c!=="Année");
   const rows=[["Variable","Moyenne","Ecart-type","Minimum","Maximum","N valides","Manquants"]];
