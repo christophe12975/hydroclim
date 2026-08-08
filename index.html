@@ -2372,7 +2372,7 @@ function sOS2(){
         const sigPts=res.signifGWS.map((g,i)=>{const y=((Math.log2(res.period[i])-pMin)/(pMax-pMin))*100;const x=(g/maxGws)*100;return`${x},${y}`;}).join(" ");
         body+=`<div class="card">
           <div class="card-title">${v}</div>
-          <div class="card-sub">alpha (lag-1) = ${res.lag1.toFixed(3)} · seuil 5% chi2 · <span style="color:#4ecba0;">🔍 cliquez sur le graphique pour agrandir</span></div>
+          <div class="card-sub">alpha (lag-1) = ${res.lag1.toFixed(3)} · <span style="color:#4ecba0;">🔍 cliquez sur le graphique pour agrandir</span></div>
           <div style="display:flex;gap:8px;align-items:stretch;cursor:zoom-in;" onclick="setState({cwtZoom:'${v}'})">
             <div style="position:relative;flex:3;">
               <canvas id="cwt-${v}" width="900" height="450" style="width:100%;border-radius:6px;display:block;"></canvas>
