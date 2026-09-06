@@ -1928,7 +1928,7 @@ function sSpearman(){
 
     // 3) Multicolinéarité, uniquement sur les indices significatifs, separement precip / temp
     const mcCard=(label,mc)=>{
-      let h=`<div class="card"><div class="card-title">Multicolinearité — ${label}</div><div class="card-sub">Indices significatifs uniquement · seuil |rho| &gt;= 0.95</div>`;
+      let h=`<div class="card"><div class="card-title">Multicolinearité — ${label}</div><div class="card-sub">Indices significatifs uniquement · seuil |rho| &gt;= 0.05</div>`;
       if(!mc.all.length){
         h+=`<div class="alert alert-info" style="margin-top:0;">Aucun indice ${label.toLowerCase()} significatif avec les debits.</div>`;
       } else {
@@ -2421,7 +2421,7 @@ function sOS2(){
               <polyline points="${gwsPts}" fill="none" stroke="#4a9fe0" stroke-width="1"/>
               <polyline points="${sigPts}" fill="none" stroke="#e06060" stroke-width="0.7" stroke-dasharray="2,1.5"/>
             </svg>
-            <div style="font-size:10px;color:#6a9080;margin-top:6px;">bleu = puissance · rouge pointille = seuil 95%</div>
+            <div style="font-size:10px;color:#6a9080;margin-top:6px;">bleu = puissance · rouge pointille = seuil 5%</div>
           </div>
         </div>
       </div>
